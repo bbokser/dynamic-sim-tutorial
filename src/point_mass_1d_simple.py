@@ -12,13 +12,14 @@ B = np.array([[0],
 G = np.array([[0], [-9.81]])
 dt = 0.001  # timestep size
 
-def dynamics_dt(X, U):
-    # Solve for X_next by matrix exponential method
-    ABG = np.vstack((np.hstack((A, B, G)), np.zeros((n_u + 1, n_x + n_u + 1))))
-    M = expm(ABG * dt)
-    Ad = M[0:n_x, 0:n_x]
-    Bd = M[0:n_x, n_x:n_x + n_u]
-    Gd = M[0:n_x, n_x + n_u:]   
+# Discretize by matrix exponential method
+ABG = np.vstack((np.hstack((A, B, G)), np.zeros((n_u + 1, n_x + n_u + 1))))
+M = expm(ABG * dt)
+Ad = M[0:n_x, 0:n_x]
+Bd = M[0:n_x, n_x:n_x + n_u]
+Gd = M[0:n_x, n_x + n_u:]  
+
+def dynamics_dt(X, U):    
     X_next = Ad @ X + Bd @ U + Gd.flatten()
     return X_next
 
