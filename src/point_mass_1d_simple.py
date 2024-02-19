@@ -22,10 +22,11 @@ def dynamics_dt(X, U):
     X_next = Ad @ X + Bd @ U + Gd.flatten()
     return X_next
 
-N = 1000  # number of timesteps
+N = 5000  # number of timesteps
 X_hist = np.zeros((N, n_x))  # array of state vectors for each timestep
 X_hist[0, :] = np.array([[1, 0]])
 U_hist = np.zeros((N-1, n_u)) # array of control vectors for each timestep
+U_hist[500:750, :] = 1000
 
 for k in range(N-1):
     X_hist[k+1, :] = dynamics_dt(X_hist[k, :], U_hist[k, :])
