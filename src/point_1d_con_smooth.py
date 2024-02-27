@@ -16,7 +16,7 @@ def grf(X):
     z = X[0]
     dz = X[1]
     c = -0.01  # inflection point
-    phi = np.clip(z, a_min=-0.005, a_max=np.inf)  # signed distance. clip to just above inflection point
+    phi = np.clip(z, a_min=c+0.005, a_max=np.inf)  # signed distance. clip to just above inflection point
     distance_fn = 1 / (-c+phi)**2
     F_spring = 0.01 * distance_fn  # spring constant inversely related to position
     F_damper = -0.01 * dz * distance_fn  # damper constant inversely related to position
@@ -39,7 +39,7 @@ X_hist[0, :] = np.array([[1, 0]])
 U_hist = np.zeros((N-1, n_u)) # array of control vectors for each timestep
 
 for k in range(N-1):
-    F_hist[k] = grf(X_hist[k, :])
+    F_hist[k] = grf(X_hist[k, :])  # get spring-damper force
     X_hist[k+1, :] = integrator_euler(dynamics_ct, X_hist[k, :], U_hist[k, :], F_hist[k])
 
 fig, axs = plt.subplots(2, sharex='all')
