@@ -8,14 +8,16 @@ A = np.array([[0, 0, 1, 0],
               [0, 0, 0, 1],
               [0, 0, 0, 0],
               [0, 0, 0, 0]])
+
 B = np.array([[0,   0],
               [0,   0],
               [1/m, 0],
               [0, 1/m]])
+
 G = np.array([[0, 0, 0, -9.81]]).T
 dt = 0.001  # timestep size
-e = 0.7  # coefficient of restitution
-mu = 0.5  # coefficient of friction
+e = 0.0  # coefficient of restitution
+mu = 0.1  # coefficient of friction
 
 def dynamics_ct(X, U):
     dX = A @ X + B @ U + G.flatten()
@@ -27,31 +29,39 @@ def integrator_euler(dyn_ct, xk, uk):
 
 def jump_map(X):
     X[1] = 0  # reset z position to zero
-    dx_before = X[2]  # x velocity before impact
     dz_before = X[3]  # z velocity before impact
     dz_after = -e * dz_before  # reverse velocity and multiply by coefficient of restitution
-    a_z = (dz_after - dz_before)/dt  # acceleration
-    Fz = m * a_z  # get ground reaction force
-    Fx = mu * Fz * np.sign(dx_before)  # calculate max friction force from GRF normal
-    a_x = Fx / m
-    # don't let friction change the object's direction--that's not possible
-    a_x = np.clip(a_x * dt, -dx_before, 0) / dt
-    Fx = a_x * m  # update Fx
-    dx_after = a_x * dt + dx_before
-    X[2] = dx_after  # x velocity after impact
     X[3] = dz_after  # z velocity after impact
-    return X, Fx, Fz
+    return X
 
 N = 5000  # number of timesteps
 X_hist = np.zeros((N, n_x))  # array of state vectors for each timestep
-Fx_hist = np.zeros((N, 1))  # array of x GRF forces for each timestep
-Fz_hist = np.zeros((N, 1))  # array of z GRF forces for each timestep
+Fx_hist = np.zeros(N)  # array of x GRF forces for each timestep
+Fz_hist = np.zeros(N)  # array of z GRF forces for each timestep
 X_hist[0, :] = np.array([[0, 1, 1, 0]])
 U_hist = np.zeros((N-1, n_u)) # array of control vectors for each timestep
 
 for k in range(N-1):
+    # if z position is below ground
     if X_hist[k, 1] < 0:  # guard function
-        X_hist[k, :], Fx_hist[k, :], Fz_hist[k, :] = jump_map(X_hist[k, :])  # dynamics rewrite based on impact
+        X_hist[k, :] = jump_map(X_hist[k, :])  # dynamics rewrite based on impact
+    
+    # if z position is zero and z vel is zero or negative, you are in ground contact and have friction
+    if X_hist[k, 1] == 0 and X_hist[k, 3] <= 0:
+        dz_before = X_hist[k, 3]  # z velocity before
+        dz_after = 0  # desired velocity is zero
+        a_z = (dz_after - dz_before)/dt  # acceleration
+        Fz = m * a_z  # get required ground reaction force to stay aboveground
+        Fz_hist[k] = Fz
+
+        dx = X_hist[k, 2]
+        Fx = -mu * Fz_hist[k] * np.sign(dx)
+        a_x = Fx / m
+        # don't let friction change the object's direction--that's not possible
+        a_x = np.clip(a_x * dt, -dx, 0) / dt
+        Fx_hist[k] = a_x * m  # update Fx
+        U_hist[k, 0] += Fx_hist[k]
+
     X_hist[k+1, :] = integrator_euler(dynamics_ct, X_hist[k, :], U_hist[k, :])
 
 # plot w.r.t. time
@@ -75,7 +85,7 @@ plt.show()
 frames = 40  # save a snapshot every X frames
 j = 0
 for k in range(N-1)[::frames]:
-    plt.xlim([-1, 1])
+    plt.xlim([-0, 2])
     plt.ylim([-0, 2])
     plt.title('Position vs Time')
     plt.xlabel('x (m)')
