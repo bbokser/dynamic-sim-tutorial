@@ -16,8 +16,24 @@ B = np.array([[0,   0],
 
 G = np.array([[0, 0, 0, -9.81]]).T
 dt = 0.001  # timestep size
-e = 0.0  # coefficient of restitution
 mu = 0.1  # coefficient of friction
+
+def get_forces(X):
+    z = X[1]
+    dx = X[2]
+    dz = X[3]
+    c = -0.01  # inflection point
+    phi = np.clip(z, a_min=c+0.005, a_max=np.inf)  # signed distance. clip to just above inflection point
+    distance_fn = 1 / (-c+phi)**2  # y = 1/x^2 relation
+    F_spring = 0.02 * distance_fn  # spring constant inversely related to position
+    F_damper = -0.02 * dz * distance_fn  # damper constant inversely related to position
+    Fz = F_spring + F_damper
+    Fx = -mu * Fz * np.sign(dx)
+    a_x = Fx / m
+    # don't let friction change the object's direction--that's not possible
+    a_x = np.clip(a_x * dt, -dx, 0) / dt
+    Fx = a_x * m  # update Fx
+    return Fx, Fz
 
 def dynamics_ct(X, U):
     dX = A @ X + B @ U + G.flatten()
@@ -27,13 +43,6 @@ def integrator_euler(dyn_ct, xk, uk):
     X_next = xk + dt * dyn_ct(xk, uk)
     return X_next
 
-def jump_map(X):
-    X[1] = 0  # reset z position to zero
-    dz_before = X[3]  # z velocity before impact
-    dz_after = -e * dz_before  # reverse velocity and multiply by coefficient of restitution
-    X[3] = dz_after  # z velocity after impact
-    return X
-
 N = 5000  # number of timesteps
 X_hist = np.zeros((N, n_x))  # array of state vectors for each timestep
 Fx_hist = np.zeros(N)  # array of x GRF forces for each timestep
@@ -42,26 +51,9 @@ X_hist[0, :] = np.array([[0, 1, 1, 0]])
 U_hist = np.zeros((N-1, n_u)) # array of control vectors for each timestep
 
 for k in range(N-1):
-    # if z position is below ground
-    if X_hist[k, 1] < 0:  # guard function
-        X_hist[k, :] = jump_map(X_hist[k, :])  # dynamics rewrite based on impact
-    
-    # if z position is zero and z vel is zero or negative, you are in ground contact and have friction
-    if X_hist[k, 1] == 0 and X_hist[k, 3] <= 0:
-        dz_before = X_hist[k, 3]  # z velocity before
-        dz_after = 0  # desired velocity is zero
-        a_z = (dz_after - dz_before)/dt  # acceleration
-        Fz = m * a_z  # get required ground reaction force to stay aboveground
-        Fz_hist[k] = Fz
-
-        dx = X_hist[k, 2]
-        Fx = -mu * Fz_hist[k] * np.sign(dx)
-        a_x = Fx / m
-        # don't let friction change the object's direction--that's not possible
-        a_x = np.clip(a_x * dt, -dx, 0) / dt
-        Fx_hist[k] = a_x * m  # update Fx
-        U_hist[k, 0] += Fx_hist[k]
-
+    Fx_hist[k], Fz_hist[k] = get_forces(X_hist[k, :])  # get spring-damper force
+    U_hist[k, 0] += Fx_hist[k]  # add friction forces to control vector
+    U_hist[k, 1] += Fz_hist[k]  # add grf to control vector
     X_hist[k+1, :] = integrator_euler(dynamics_ct, X_hist[k, :], U_hist[k, :])
 
 # plot w.r.t. time
