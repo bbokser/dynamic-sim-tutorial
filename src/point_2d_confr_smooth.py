@@ -1,6 +1,8 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
+import os_utils
+
 n_x = 4  # length of state vector
 n_u = 2  # length of control vector
 m = 10  # mass of the rocket in kg
@@ -52,8 +54,8 @@ U_hist = np.zeros((N-1, n_u)) # array of control vectors for each timestep
 
 for k in range(N-1):
     Fx_hist[k], Fz_hist[k] = get_forces(X_hist[k, :])  # get spring-damper force
-    U_hist[k, 0] += Fx_hist[k]  # add friction forces to control vector
-    U_hist[k, 1] += Fz_hist[k]  # add grf to control vector
+    U_hist[k, 0] += Fx_hist[k]  # add friction force to x component of control vector
+    U_hist[k, 1] += Fz_hist[k]  # add grf to z component of control vector
     X_hist[k+1, :] = integrator_euler(dynamics_ct, X_hist[k, :], U_hist[k, :])
 
 # plot w.r.t. time
@@ -74,6 +76,8 @@ plt.ylabel("z (m)")
 plt.show()
 
 # generate animation
+file_name = '2d_confr_smooth'
+path_dir_imgs, path_dir_gif = os_utils.prep_animation()
 frames = 40  # save a snapshot every X frames
 j = 0
 for k in range(N-1)[::frames]:
@@ -84,6 +88,8 @@ for k in range(N-1)[::frames]:
     plt.ylabel('z (m)')
     plt.scatter(X_hist[k, 0], X_hist[k, 1])
     plt.text(0.01, 0, 't = ' + '{:.2f}'.format(round(k * dt, 2)) + 's', ha='left', va='bottom', transform=plt.gca().transAxes)
-    plt.savefig('imgs/' + str(j).zfill(4) + '.png')  #, dpi=200)
+    plt.savefig(path_dir_imgs + '/' + str(j).zfill(4) + '.png')
     plt.close()
     j += 1
+
+os_utils.convert_gif(path_dir_imgs=path_dir_imgs, path_dir_output=path_dir_gif, file_name=file_name)
