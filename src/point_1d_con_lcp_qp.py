@@ -24,9 +24,9 @@ Ad = M[0:n_a, 0:n_a]
 Bd = M[0:n_a, n_a:n_a + n_u]
 Gd = M[0:n_a, n_a + n_u:]  
 
-X_0 = np.array([1, 0])
+X_0 = np.array([0.5, 0])
 
-N = 50  # number of timesteps 5000
+N = 100  # number of timesteps 5000
 n_x  = (N-1) * (n_a + n_u)  # number of states in x
 
 ABI = np.hstack((Ad, Bd, -np.eye(n_a)))
@@ -82,6 +82,11 @@ cost = cp.quad_form(z, M) + q.T @ z  # cost function
 constr = []  # init constraints
 constr += [M @ z + q >= 0] # dynamics
 constr += [z >= 0]
+# lam = z[::3]  # grf
+# phi = z[1::3]  # signed distance
+# constr += [phi[0] == 1]
+# constr += [lam >= 0]
+# constr += [phi >= 0]
 
 # --- set up solver --- #
 problem = cp.Problem(cp.Minimize(cost), constr)
@@ -92,8 +97,14 @@ F_hist = z.value[0::3]
 pos_hist = z.value[1::3]  # array of state vectors for each timestep
 vel_hist = z.value[2::3]
 
-plt.plot(range(N-1), pos_hist)
-plt.title('Body Position vs Time')
-plt.ylabel("z (m)")
-plt.xlabel("timesteps")
+fig, axs = plt.subplots(3, sharex='all')
+fig.suptitle('Body Position vs Time')
+plt.xlabel('timesteps')
+axs[0].plot(range(N-1), pos_hist)
+axs[0].set_ylabel('z (m)')
+axs[0].set_ylim([-0.5, 1])
+axs[1].plot(range(N-1), vel_hist)
+axs[1].set_ylabel('z dot (m/s)')
+axs[2].plot(range(N-1), F_hist)
+axs[2].set_ylabel('z GRF (N)')
 plt.show()
