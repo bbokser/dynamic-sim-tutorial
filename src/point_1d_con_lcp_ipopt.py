@@ -35,16 +35,11 @@ n_eq = (N - 1) * ABI_rows  # size of equality constraint
 C_eq = np.zeros((n_eq, n_x + n_a))
 d_eq = np.zeros((n_eq, 1))
 
-# C_ineq = np.vstack((np.eye(n_x), np.zeros((n_x, n_x))))
-C_ineq = np.eye(n_x)
-d_ineq = np.zeros(n_x)
-
 for k in range(N - 1):
     C_eq[
         k * ABI_rows : k * ABI_rows + ABI_rows,
         k * (ABI_cols - n_a) : k * (ABI_cols - n_a) + ABI_cols,
     ] = ABI
-    C_ineq[k * (n_a + n_u) + 2, k * (n_a + n_u) + 2] = 0  # multiplier for xdot
     d_eq[k * ABI_rows : k * ABI_rows + n_a, :] = (
         -Gd
     )  # add gravity vector to equality RHS
@@ -69,7 +64,7 @@ solver = cs.nlpsol("S", "ipopt", lcp)
 ubx = [1e10] * (n_x + N - 1)
 lbx = np.append([0] * n_x, [-1e10] * (N - 1))
 lbx[2:n_x:3] = [-1e10 for i in range(N - 1)]
-print(lbx)
+
 lbg = np.append(d_eq, [0] * (N - 1))
 ubg = np.append(d_eq, [0] * (N - 1))
 sol = solver(lbx=lbx, ubx=ubx, lbg=lbg, ubg=ubg)

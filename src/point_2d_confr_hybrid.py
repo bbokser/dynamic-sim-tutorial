@@ -1,7 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-import os_utils
+import plotting
 
 n_x = 4  # length of state vector
 n_u = 2  # length of control vector
@@ -85,30 +85,6 @@ plt.xlabel("x (m)")
 plt.ylabel("z (m)")
 plt.show()
 
-# generate animation
-file_name = "2d_confr_hybrid"
-path_dir_imgs, path_dir_gif = os_utils.prep_animation()
-frames = 40  # save a snapshot every X frames
-j = 0
-for k in range(N - 1)[::frames]:
-    plt.xlim([-0, 2])
-    plt.ylim([-0, 2])
-    plt.title("Position vs Time")
-    plt.xlabel("x (m)")
-    plt.ylabel("z (m)")
-    plt.scatter(X_hist[k, 0], X_hist[k, 1])
-    plt.text(
-        0.01,
-        0,
-        "t = " + "{:.2f}".format(round(k * dt, 2)) + "s",
-        ha="left",
-        va="bottom",
-        transform=plt.gca().transAxes,
-    )
-    plt.savefig(path_dir_imgs + "/" + str(j).zfill(4) + ".png")
-    plt.close()
-    j += 1
-
-os_utils.convert_gif(
-    path_dir_imgs=path_dir_imgs, path_dir_output=path_dir_gif, file_name=file_name
+plotting.animate(
+    x_hist=X_hist[k, 0], z_hist=X_hist[k, 1], dt=dt, name="2d_confr_hybrid"
 )
