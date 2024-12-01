@@ -77,5 +77,5 @@ plt.show()
 
 # generate animation
 plotting.animate(
-    x_hist=X_hist[k, 0], z_hist=X_hist[k, 1], dt=dt, name="2d_confr_smooth"
+    x_hist=X_hist[:, 0], z_hist=X_hist[:, 1], dt=dt, name="2d_confr_smooth"
 )
