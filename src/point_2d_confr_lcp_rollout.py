@@ -5,9 +5,10 @@ import casadi as cs
 
 import plotting
 
+ϵ = 1e-6
+
 
 def smoothsqrt(x):
-    ϵ = 1e-6
     return np.sqrt(x + ϵ * ϵ) - ϵ
 
 
@@ -20,7 +21,7 @@ A = np.array([[0, 0, 1, 0], [0, 0, 0, 1], [0, 0, 0, 0], [0, 0, 0, 0]])
 B = np.array([[0, 0], [0, 0], [1 / m, 0], [0, 1 / m]])
 G = np.array([[0, 0, 0, -9.81]]).T
 dt = 0.002  # timestep size
-mu = 0.5  # coefficient of friction
+mu = 0.1  # coefficient of friction
 
 # Discretize by matrix exponential method
 ABG_raw = np.hstack((A, B, G))
@@ -91,21 +92,25 @@ constr = []  # init constraints
 constr = cs.vertcat(constr, cs.SX(C_eq @ x))  # Ax + Bu + G
 primal_friction = mu * Fz - smoothsqrt(Fx * Fx)  # uN = Ff
 constr = cs.vertcat(constr, cs.SX(primal_friction))  # friction cone
-lamg_def = dx - lamg * Fz / smoothsqrt(Fz * Fz)  # tang. gnd vel
+lamg_def = dx - lamg * Fx / smoothsqrt(Fx * Fx)  # tang. gnd vel
 constr = cs.vertcat(constr, cs.SX(lamg_def))
 # relaxed complementarity
 constr = cs.vertcat(constr, cs.SX(s1 - Fz * phi))  # ground penetration
 constr = cs.vertcat(constr, cs.SX(s2 - lamg * primal_friction))  # friction
 opt_variables = cs.vertcat(x, s1, s2, lamg)
 lcp = {"x": opt_variables, "f": obj, "g": constr}
-solver = cs.nlpsol("S", "ipopt", lcp)
+opts = {
+    "print_time": 0,
+    "ipopt.print_level": 0,
+    "ipopt.tol": ϵ,
+    "ipopt.max_iter": 1000,
+}
+solver = cs.nlpsol("S", "ipopt", lcp, opts)
 
 n_var = np.shape(opt_variables)[0]
 # variable bounds
 ubx = [1e10] * n_var
-lbx = np.append(
-    [0] * n_x, [-1e10] * (n_var - n_x)
-)  # include lower limit for signed distance
+lbx = [0] * n_var  # include lower limit for signed distance
 lbx[2:n_x:n_t] = [-1e10 for i in range(N - 1)]  # set x limits
 lbx[4:n_x:n_t] = [-1e10 for i in range(N - 1)]  # set dx limits
 lbx[5:n_x:n_t] = [-1e10 for i in range(N - 1)]  # set dz limits
@@ -145,4 +150,4 @@ plt.ylabel("z (m)")
 plt.show()
 
 # generate animation
-plotting.animate(x_hist=x_hist, z_hist=z_hist, dt=dt, name="2d_confr_lcp")
+plotting.animate(x_hist=x_hist, z_hist=z_hist, dt=dt, name="2d_confr_lcp_rollout")

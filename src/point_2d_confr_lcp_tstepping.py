@@ -5,9 +5,10 @@ import casadi as cs
 
 import plotting
 
+ϵ = 1e-6
+
 
 def smoothsqrt(x):
-    ϵ = 1e-6
     return np.sqrt(x + ϵ * ϵ) - ϵ
 
 
@@ -19,8 +20,8 @@ g = 9.81  # gravitational constant
 A = np.array([[0, 0, 1, 0], [0, 0, 0, 1], [0, 0, 0, 0], [0, 0, 0, 0]])
 B = np.array([[0, 0], [0, 0], [1 / m, 0], [0, 1 / m]])
 G = np.array([[0, 0, 0, -9.81]]).T
-dt = 0.001  # timestep size
-mu = 0.5  # coefficient of friction
+dt = 0.002  # timestep size
+mu = 0.1  # coefficient of friction
 
 # Discretize by matrix exponential method
 ABG_raw = np.hstack((A, B, G))
@@ -33,9 +34,9 @@ Ad = M[0:n_a, 0:n_a]
 Bd = M[0:n_a, n_a : n_a + n_u]
 Gd = M[0:n_a, n_a + n_u :]
 
-N = 5000  # number of timesteps
+N = 500  # number of timesteps
 X_hist = np.zeros((N, n_a))  # array of state vectors for each timestep
-Fx_hist = np.zeros(N)  # array of x GRF forces for each timestep
+Fx_hist = np.zeros(N)  # array of x friction forces for each timestep
 Fz_hist = np.zeros(N)  # array of z GRF forces for each timestep
 X_hist[0, :] = np.array([[0, 1, 1, 0]])
 U_hist = np.zeros((N - 1, n_u))  # array of control vectors for each timestep
@@ -49,12 +50,12 @@ lamv = cs.SX.sym("lamv", 1)  # lagrange mult for ground vel
 X = cs.SX.sym("X", n_a)  # state
 U = cs.SX.sym("U", n_u)  # controls
 
-Fx = F[0]  # friction force
-Fz = F[1]  # grf
 x = Xk1[0]  # horz pos
 z = Xk1[1]  # vert pos
 dx = Xk1[2]  # horizontal vel
 dz = Xk1[3]  # vertical vel
+Fx = F[0]  # friction force
+Fz = F[1]  # grf
 
 obj = s1 + s2
 
@@ -64,7 +65,7 @@ constr = cs.vertcat(constr, cs.SX(Ad @ X + Bd @ U + Bd @ F + Gd - Xk1))
 
 # stationarity
 # tang. gnd vel is zero if GRF is zero but is otherwise equal to dx
-lamv_def = dx - lamv * Fz / smoothsqrt(Fz * Fz)  # tang. gnd vel
+lamv_def = dx - lamv * Fx / smoothsqrt(Fx * Fx)  # tang. gnd vel
 constr = cs.vertcat(constr, cs.SX(lamv_def))
 
 # primal feasibility
@@ -78,30 +79,40 @@ constr = cs.vertcat(constr, cs.SX(s2 - lamv * primal_friction))  # friction
 opt_variables = cs.vertcat(Xk1, F, s1, s2, lamv)
 parameters = cs.vertcat(X, U)
 lcp = {"x": opt_variables, "p": parameters, "f": obj, "g": constr}
-solver = cs.nlpsol("S", "ipopt", lcp)
+opts = {
+    "print_time": 0,
+    "ipopt.print_level": 0,
+    "ipopt.tol": ϵ,
+    "ipopt.max_iter": 1000,
+}
+solver = cs.nlpsol("S", "ipopt", lcp, opts)
 
 n_var = np.shape(opt_variables)[0]
+n_par = np.shape(parameters)[0]
+n_g = np.shape(constr)[0]
+
 # variable bounds
 ubx = [1e10] * n_var
-lbx = [-1e10] * n_var
-# dual feasibility
-lbx[1] = 0  # set z limit
-lbx[-1] = 0  # set lamv limit
-
-n_g = np.shape(constr)[0]
+lbx = [-1e10] * n_var  # dual feasibility
+lbx[1] = 0  # set z positive only
+lbx[n_a + 1] = 0  # set Fz positive only
+lbx[-2] = 0  # set slack variable >= 0
+lbx[-1] = 0  # set slack variable >= 0
 
 # constraint bounds
 ubg = [1e10] * n_g
 ubg[0:n_a] = np.zeros(n_a)  # set dynamics = 0
-ubg[-1] = 0  # set compl. slackness = 0
-ubg[-2] = 0  # set compl. slackness = 0
 lbg = [0] * n_g
 
 # run the sim
+p_values = np.zeros(n_par)
+x0_values = np.zeros(n_var)
 for k in range(N - 1):
-    sol = solver(
-        lbx=lbx, ubx=ubx, lbg=lbg, ubg=ubg, p=np.append(X_hist[k, :], U_hist[k, :])
-    )
+    print("timestep = ", k)
+    p_values[:n_a] = X_hist[k, :]
+    p_values[n_a:] = U_hist[k, :]
+    # x0_values[:n_a] = X_hist[k, :]
+    sol = solver(lbx=lbx, ubx=ubx, lbg=lbg, ubg=ubg, p=p_values)  # , x0=x0_values)
     X_hist[k + 1, :] = np.reshape(sol["x"][0:n_a], (-1,))
     Fx_hist[k] = sol["x"][n_a]
     Fz_hist[k] = sol["x"][n_a + 1]
@@ -124,5 +135,5 @@ plt.ylabel("z (m)")
 plt.show()
 
 plotting.animate(
-    x_hist=X_hist[:, 0], z_hist=X_hist[:, 1], dt=dt, name="2d_confr_tstepping"
+    x_hist=X_hist[:, 0], z_hist=X_hist[:, 1], dt=dt, name="2d_confr_lcp_tstepping"
 )
