@@ -76,7 +76,7 @@ d_eq[0:n_a] += np.reshape(-Ad @ X_0.T, (-1, 1))
 x = cs.SX.sym("x", n_x)  # combination of states and controls (grfs)
 s1 = cs.SX.sym("s1", N - 1)  # slack variable 1
 s2 = cs.SX.sym("s2", N - 1)  # slack variable 2
-lamg = cs.SX.sym("lamg", N - 1)  # lagrange mult for ground vel
+lam = cs.SX.sym("lam", N - 1)  # lagrange mult for ground vel
 
 Q = np.eye(N - 1)
 n_t = n_a + n_u  # length of state + control vector
@@ -92,12 +92,12 @@ constr = []  # init constraints
 constr = cs.vertcat(constr, cs.SX(C_eq @ x))  # Ax + Bu + G
 primal_friction = mu * Fz - smoothsqrt(Fx * Fx)  # uN = Ff
 constr = cs.vertcat(constr, cs.SX(primal_friction))  # friction cone
-lamg_def = dx - lamg * Fx / smoothsqrt(Fx * Fx)  # tang. gnd vel
-constr = cs.vertcat(constr, cs.SX(lamg_def))
+lam_def = dx - lam * Fx / smoothsqrt(Fx * Fx)  # tang. gnd vel
+constr = cs.vertcat(constr, cs.SX(lam_def))
 # relaxed complementarity
 constr = cs.vertcat(constr, cs.SX(s1 - Fz * phi))  # ground penetration
-constr = cs.vertcat(constr, cs.SX(s2 - lamg * primal_friction))  # friction
-opt_variables = cs.vertcat(x, s1, s2, lamg)
+constr = cs.vertcat(constr, cs.SX(s2 - lam * primal_friction))  # friction
+opt_variables = cs.vertcat(x, s1, s2, lam)
 lcp = {"x": opt_variables, "f": obj, "g": constr}
 opts = {
     "print_time": 0,

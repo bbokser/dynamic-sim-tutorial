@@ -9,7 +9,7 @@ import plotting
 
 
 def smoothsqrt(x):
-    return np.sqrt(x + ϵ * ϵ) - ϵ
+    return cs.sqrt(x + ϵ * ϵ) - ϵ
 
 
 n_a = 4  # length of state vector
@@ -46,7 +46,7 @@ Xk1 = cs.SX.sym("Xk1", n_a)  # X(k+1), state at next timestep
 F = cs.SX.sym("F", n_u)  # forces
 s1 = cs.SX.sym("s1", 1)  # slack variable 1
 s2 = cs.SX.sym("s2", 1)  # slack variable 2
-lamv = cs.SX.sym("lamv", 1)  # lagrange mult for ground vel
+lam = cs.SX.sym("lam", 1)  # lagrange mult for ground vel
 X = cs.SX.sym("X", n_a)  # state
 U = cs.SX.sym("U", n_u)  # controls
 
@@ -63,10 +63,9 @@ constr = []  # init constraints
 # dynamics A*X(k) + B*U(k) + G(k) - X(k+1) = 0
 constr = cs.vertcat(constr, cs.SX(Ad @ X + Bd @ U + Bd @ F + Gd - Xk1))
 
-# stationarity
 # tang. gnd vel is zero if GRF is zero but is otherwise equal to dx
-lamv_def = dx - lamv * Fx / smoothsqrt(Fx * Fx)  # tang. gnd vel
-constr = cs.vertcat(constr, cs.SX(lamv_def))
+# max dissipation
+constr = cs.vertcat(constr, cs.SX(dx + lam * Fx / smoothsqrt(Fx * Fx)))
 
 # primal feasibility
 primal_friction = mu * Fz - smoothsqrt(Fx * Fx)  # uN = Ff
@@ -74,9 +73,9 @@ constr = cs.vertcat(constr, cs.SX(primal_friction))  # friction cone
 
 # relaxed complementarity aka compl. slackness
 constr = cs.vertcat(constr, cs.SX(s1 - Fz * z))  # ground penetration
-constr = cs.vertcat(constr, cs.SX(s2 - lamv * primal_friction))  # friction
+constr = cs.vertcat(constr, cs.SX(s2 - lam * primal_friction))  # friction
 
-opt_variables = cs.vertcat(Xk1, F, s1, s2, lamv)
+opt_variables = cs.vertcat(Xk1, F, s1, s2, lam)
 parameters = cs.vertcat(X, U)
 lcp = {"x": opt_variables, "p": parameters, "f": obj, "g": constr}
 opts = {
@@ -102,6 +101,7 @@ lbx[-1] = 0  # set slack variable >= 0
 # constraint bounds
 ubg = [1e10] * n_g
 ubg[0:n_a] = np.zeros(n_a)  # set dynamics = 0
+ubg[n_a] = 0  # set max dissipation = 0
 lbg = [0] * n_g
 
 # run the sim
@@ -111,8 +111,8 @@ for k in range(N - 1):
     print("timestep = ", k)
     p_values[:n_a] = X_hist[k, :]
     p_values[n_a:] = U_hist[k, :]
-    # x0_values[:n_a] = X_hist[k, :]
-    sol = solver(lbx=lbx, ubx=ubx, lbg=lbg, ubg=ubg, p=p_values)  # , x0=x0_values)
+    x0_values[:n_a] = X_hist[k, :]
+    sol = solver(lbx=lbx, ubx=ubx, lbg=lbg, ubg=ubg, p=p_values, x0=x0_values)
     X_hist[k + 1, :] = np.reshape(sol["x"][0:n_a], (-1,))
     Fx_hist[k] = sol["x"][n_a]
     Fz_hist[k] = sol["x"][n_a + 1]
