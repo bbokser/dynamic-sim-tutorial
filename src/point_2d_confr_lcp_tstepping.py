@@ -65,7 +65,7 @@ constr = cs.vertcat(constr, cs.SX(Ad @ X + Bd @ U + Bd @ F + Gd - Xk1))
 
 # tang. gnd vel is zero if GRF is zero but is otherwise equal to dx
 # max dissipation
-constr = cs.vertcat(constr, cs.SX(dx + lam * Fx / smoothsqrt(Fx * Fx)))
+constr = cs.vertcat(constr, cs.SX(dx + lam * Fx / (smoothsqrt(Fx * Fx) + ϵ)))
 
 # primal feasibility
 primal_friction = mu * Fz - smoothsqrt(Fx * Fx)  # uN = Ff
@@ -92,11 +92,11 @@ n_g = np.shape(constr)[0]
 
 # variable bounds
 ubx = [1e10] * n_var
-lbx = [-1e10] * n_var  # dual feasibility
-lbx[1] = 0  # set z positive only
-lbx[n_a + 1] = 0  # set Fz positive only
-lbx[-2] = 0  # set slack variable >= 0
-lbx[-1] = 0  # set slack variable >= 0
+lbx = [0] * n_var  # dual feasibility
+lbx[0] = -1e10  # set x unlimited
+lbx[2] = -1e10  # set dx unlimited
+lbx[3] = -1e10  # set dz unlimited
+lbx[n_a] = -1e10  # set Fx unlimited
 
 # constraint bounds
 ubg = [1e10] * n_g
@@ -111,29 +111,34 @@ for k in range(N - 1):
     print("timestep = ", k)
     p_values[:n_a] = X_hist[k, :]
     p_values[n_a:] = U_hist[k, :]
-    x0_values[:n_a] = X_hist[k, :]
-    sol = solver(lbx=lbx, ubx=ubx, lbg=lbg, ubg=ubg, p=p_values, x0=x0_values)
+    # x0_values[:n_a] = X_hist[k, :]
+    sol = solver(lbx=lbx, ubx=ubx, lbg=lbg, ubg=ubg, p=p_values)  # , x0=x0_values)
     X_hist[k + 1, :] = np.reshape(sol["x"][0:n_a], (-1,))
     Fx_hist[k] = sol["x"][n_a]
     Fz_hist[k] = sol["x"][n_a + 1]
 
+x_hist = X_hist[:, 0]
+z_hist = X_hist[:, 1]
 # plot w.r.t. time
-fig, axs = plt.subplots(2, sharex="all")
+fig, axs = plt.subplots(4, sharex="all")
 fig.suptitle("Body Position vs Time")
 plt.xlabel("timesteps")
-axs[0].plot(range(N), X_hist[:, 1])
-axs[0].set_ylabel("z (m)")
-axs[1].plot(range(N), Fz_hist)
-axs[1].set_ylabel("z GRF (N)")
+axs[0].plot(range(N), x_hist)
+axs[0].set_ylabel("x (m)")
+axs[1].plot(range(N), z_hist)
+axs[1].set_ylabel("z (m)")
+axs[2].plot(range(N), Fx_hist)
+axs[2].set_ylabel("x F (N)")
+axs[3].plot(range(N), Fz_hist)
+axs[3].set_ylabel("z F (N)")
 plt.show()
 
 # plot in cartesian coordinatesS
-plt.plot(X_hist[:, 0], X_hist[:, 1])
+plt.plot(x_hist, z_hist)
 plt.title("Body Position in the XZ plane")
 plt.xlabel("x (m)")
 plt.ylabel("z (m)")
 plt.show()
 
-plotting.animate(
-    x_hist=X_hist[:, 0], z_hist=X_hist[:, 1], dt=dt, name="2d_confr_lcp_tstepping"
-)
+# generate animation
+plotting.animate(x_hist=x_hist, z_hist=z_hist, dt=dt, name="2d_confr_lcp_tstepping")

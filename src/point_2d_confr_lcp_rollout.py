@@ -90,10 +90,12 @@ obj = s1.T @ Q @ s1 + s2.T @ Q @ s2
 constr = []  # init constraints
 # dynamics
 constr = cs.vertcat(constr, cs.SX(C_eq @ x))  # Ax + Bu + G
+lam_def = dx + lam * Fx / (smoothsqrt(Fx * Fx) + ϵ)  # tang. gnd vel
+constr = cs.vertcat(constr, cs.SX(lam_def))
+
 primal_friction = mu * Fz - smoothsqrt(Fx * Fx)  # uN = Ff
 constr = cs.vertcat(constr, cs.SX(primal_friction))  # friction cone
-lam_def = dx - lam * Fx / smoothsqrt(Fx * Fx)  # tang. gnd vel
-constr = cs.vertcat(constr, cs.SX(lam_def))
+
 # relaxed complementarity
 constr = cs.vertcat(constr, cs.SX(s1 - Fz * phi))  # ground penetration
 constr = cs.vertcat(constr, cs.SX(s2 - lam * primal_friction))  # friction
@@ -111,15 +113,22 @@ n_var = np.shape(opt_variables)[0]
 # variable bounds
 ubx = [1e10] * n_var
 lbx = [0] * n_var  # include lower limit for signed distance
+
+lbx[0:n_x:n_t] = [-1e10 for i in range(N - 1)]  # set Fx limits
 lbx[2:n_x:n_t] = [-1e10 for i in range(N - 1)]  # set x limits
 lbx[4:n_x:n_t] = [-1e10 for i in range(N - 1)]  # set dx limits
 lbx[5:n_x:n_t] = [-1e10 for i in range(N - 1)]  # set dz limits
 
 n_g = np.shape(constr)[0]
+n_deq = np.shape(d_eq)[0]
+n_lam = np.shape(lam_def)[0]
 n_f = np.shape(primal_friction)[0]
 # constraint bounds
-ubg = np.append(d_eq, [1e10] * n_f)
-ubg = np.append(ubg, [0] * (n_g - n_eq - n_f))
+
+ubg = [1e10] * n_g
+ubg[:n_deq] = d_eq
+ubg[n_deq : n_deq + n_lam] = [0 for i in range(n_lam)]
+
 lbg = np.append(d_eq, [0] * (n_g - n_eq))
 
 sol = solver(lbx=lbx, ubx=ubx, lbg=lbg, ubg=ubg)
@@ -133,13 +142,17 @@ dx_hist = np.array(x_sol[4::n_t])
 dz_hist = np.array(x_sol[5::n_t])
 
 # plot w.r.t. time
-fig, axs = plt.subplots(2, sharex="all")
+fig, axs = plt.subplots(4, sharex="all")
 fig.suptitle("Body Position vs Time")
 plt.xlabel("timesteps")
-axs[0].plot(range(N - 1), z_hist)
-axs[0].set_ylabel("z (m)")
-axs[1].plot(range(N - 1), Fz_hist)
-axs[1].set_ylabel("z GRF (N)")
+axs[0].plot(range(N - 1), x_hist)
+axs[0].set_ylabel("x (m)")
+axs[1].plot(range(N - 1), z_hist)
+axs[1].set_ylabel("z (m)")
+axs[2].plot(range(N - 1), Fx_hist)
+axs[2].set_ylabel("x F (N)")
+axs[3].plot(range(N - 1), Fz_hist)
+axs[3].set_ylabel("z F (N)")
 plt.show()
 
 # plot in cartesian coordinatesS
