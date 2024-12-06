@@ -112,6 +112,6 @@ plotting.animate(
     x_hist=np.zeros(N),
     z_hist=pos_hist,
     dt=dt,
-    name="1d_con_lcp_tstepping",
+    name="1d_con_lcp_tstep",
     xlim=[-1, 1],
 )

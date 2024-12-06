@@ -82,7 +82,7 @@ Q = np.eye(N - 1)
 n_t = n_a + n_u  # length of state + control vector
 Fx = x[0::n_t]  # friction force
 Fz = x[1::n_t]  # grf
-phi = x[3::n_t]  # signed distance
+z = x[3::n_t]  # signed distance
 dx = x[4::n_t]  # horizontal vel
 
 obj = s1.T @ Q @ s1 + s2.T @ Q @ s2
@@ -97,7 +97,7 @@ primal_friction = mu * Fz - smoothsqrt(Fx * Fx)  # uN = Ff
 constr = cs.vertcat(constr, cs.SX(primal_friction))  # friction cone
 
 # relaxed complementarity
-constr = cs.vertcat(constr, cs.SX(s1 - Fz * phi))  # ground penetration
+constr = cs.vertcat(constr, cs.SX(s1 - Fz * z))  # ground penetration
 constr = cs.vertcat(constr, cs.SX(s2 - lam * primal_friction))  # friction
 opt_variables = cs.vertcat(x, s1, s2, lam)
 lcp = {"x": opt_variables, "f": obj, "g": constr}
@@ -140,26 +140,28 @@ x_hist = np.array(x_sol[2::n_t])
 z_hist = np.array(x_sol[3::n_t])
 dx_hist = np.array(x_sol[4::n_t])
 dz_hist = np.array(x_sol[5::n_t])
+s1_hist = np.array(x_sol[n_a + 1 :: n_t])
+s2_hist = np.array(x_sol[n_a + 1 :: n_t])
+lam_hist = np.array(x_sol[n_a + 1 :: n_t])
 
 # plot w.r.t. time
-fig, axs = plt.subplots(4, sharex="all")
+fig, axs = plt.subplots(7, sharex="all")
 fig.suptitle("Body Position vs Time")
 plt.xlabel("timesteps")
-axs[0].plot(range(N - 1), x_hist)
+axs[0].plot(range(N), x_hist)
 axs[0].set_ylabel("x (m)")
-axs[1].plot(range(N - 1), z_hist)
+axs[1].plot(range(N), z_hist)
 axs[1].set_ylabel("z (m)")
-axs[2].plot(range(N - 1), Fx_hist)
-axs[2].set_ylabel("x F (N)")
-axs[3].plot(range(N - 1), Fz_hist)
-axs[3].set_ylabel("z F (N)")
-plt.show()
-
-# plot in cartesian coordinatesS
-plt.plot(x_hist, z_hist)
-plt.title("Body Position in the XZ plane")
-plt.xlabel("x (m)")
-plt.ylabel("z (m)")
+axs[2].plot(range(N), Fx_hist)
+axs[2].set_ylabel("Fx (N)")
+axs[3].plot(range(N), Fz_hist)
+axs[3].set_ylabel("Fz (N)")
+axs[4].plot(range(N), s1_hist)
+axs[4].set_ylabel("slack var1")
+axs[5].plot(range(N), s2_hist)
+axs[5].set_ylabel("slack var2")
+axs[6].plot(range(N), lam_hist)
+axs[6].set_ylabel("lambda")
 plt.show()
 
 # generate animation

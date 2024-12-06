@@ -68,13 +68,6 @@ axs[1].plot(range(N), Fz_hist)
 axs[1].set_ylabel("z GRF (N)")
 plt.show()
 
-# plot in cartesian coordinatesS
-plt.plot(X_hist[:, 0], X_hist[:, 1])
-plt.title("Body Position in the XZ plane")
-plt.xlabel("x (m)")
-plt.ylabel("z (m)")
-plt.show()
-
 # generate animation
 plotting.animate(
     x_hist=X_hist[:, 0], z_hist=X_hist[:, 1], dt=dt, name="2d_confr_smooth"
