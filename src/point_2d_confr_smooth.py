@@ -1,6 +1,4 @@
 import numpy as np
-import matplotlib.pyplot as plt
-
 import plotting
 
 n_x = 4  # length of state vector
@@ -45,7 +43,7 @@ def integrator_euler(dyn_ct, xk, uk):
     return X_next
 
 
-N = 5000  # number of timesteps
+N = 1500  # number of timesteps
 X_hist = np.zeros((N, n_x))  # array of state vectors for each timestep
 Fx_hist = np.zeros(N)  # array of x GRF forces for each timestep
 Fz_hist = np.zeros(N)  # array of z GRF forces for each timestep
@@ -58,17 +56,17 @@ for k in range(N - 1):
     U_hist[k, 1] += Fz_hist[k]  # add grf to z component of control vector
     X_hist[k + 1, :] = integrator_euler(dynamics_ct, X_hist[k, :], U_hist[k, :])
 
-# plot w.r.t. time
-fig, axs = plt.subplots(2, sharex="all")
-fig.suptitle("Body Position vs Time")
-plt.xlabel("timesteps")
-axs[0].plot(range(N), X_hist[:, 1])
-axs[0].set_ylabel("z (m)")
-axs[1].plot(range(N), Fz_hist)
-axs[1].set_ylabel("z GRF (N)")
-plt.show()
+
+name = "2d_confr_smooth"
+hists = {
+    "x (m)": X_hist[:, 0],
+    "z (m)": X_hist[:, 1],
+    "dx (m)": X_hist[:, 2],
+    "dz (m)": X_hist[:, 3],
+    "Fx (N)": Fx_hist,
+    "Fz (N)": Fz_hist,
+}
+plotting.plot_2d_hist(hists, N, name)
 
 # generate animation
-plotting.animate(
-    x_hist=X_hist[:, 0], z_hist=X_hist[:, 1], dt=dt, name="2d_confr_smooth"
-)
+plotting.animate(x_hist=X_hist[:, 0], z_hist=X_hist[:, 1], dt=dt, name=name)

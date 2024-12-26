@@ -1,6 +1,4 @@
 import numpy as np
-import matplotlib.pyplot as plt
-from scipy.linalg import expm
 import casadi as cs
 
 import plotting
@@ -20,20 +18,8 @@ g = 9.81  # gravitational constant
 A = np.array([[0, 0, 1, 0], [0, 0, 0, 1], [0, 0, 0, 0], [0, 0, 0, 0]])
 B = np.array([[0, 0], [0, 0], [1 / m, 0], [0, 1 / m]])
 G = np.array([[0, 0, 0, -9.81]]).T
-dt = 0.002  # timestep size
+dt = 0.001  # timestep size
 mu = 0.1  # coefficient of friction
-
-# Discretize by matrix exponential method
-# ABG_raw = np.hstack((A, B, G))
-# ABG_rows = np.shape(ABG_raw)[0]
-# ABG_cols = np.shape(ABG_raw)[1]
-# ABG = np.vstack((ABG_raw, np.zeros((ABG_cols - ABG_rows, ABG_cols))))
-
-
-# M = expm(ABG * dt)
-# Ad = M[0:n_a, 0:n_a]
-# Bd = M[0:n_a, n_a : n_a + n_u]
-# Gd = M[0:n_a, n_a + n_u :]
 
 
 def dynamics_ct(X, U):
@@ -43,6 +29,15 @@ def dynamics_ct(X, U):
 
 def integrator_euler(dyn_ct, xk, uk):
     X_next = xk + dt * dyn_ct(xk, uk)
+    return X_next
+
+
+def integrator_euler_semi_implicit(dyn_ct, xk, uk, xk1):
+    xk_semi = cs.SX.zeros(n_a)
+    xk_semi[:2] = xk[:2]
+    xk_semi[2:] = xk1[2:]
+    # X_next = xk + dt * dyn_ct(xk1, uk)
+    X_next = xk + dt * dyn_ct(xk_semi, uk)
     return X_next
 
 
@@ -69,21 +64,19 @@ Fx = F[0]  # friction force
 Fz = F[1]  # grf
 
 xk1 = Xk1[0]  # horz pos
-# zk1 = Xk1[1]  # vert pos
+zk1 = Xk1[1]  # vert pos
 # dxk1 = Xk1[2]  # horizontal vel
-# dzk1 = Xk1[3]  # vertical vel
-
+dzk1 = Xk1[3]  # vertical vel
 obj = s1 + s2
 
 constr = []  # init constraints
 # dynamics A*X(k) + B*U(k) + G(k) - X(k+1) = 0
-
-constr = cs.vertcat(constr, cs.SX(integrator_euler(dynamics_ct, X, F) - Xk1))
-# constr = cs.vertcat(constr, cs.SX(Ad @ X + Bd @ U + Bd @ F + Gd - Xk1))
+constr = cs.vertcat(
+    constr, cs.SX(integrator_euler_semi_implicit(dynamics_ct, X, F, Xk1) - Xk1)
+)
 
 # tang. gnd vel is zero if GRF is zero but is otherwise equal to dx
 # max dissipation
-# vm = (xk1 - xk) / dt
 constr = cs.vertcat(constr, cs.SX(dxk + lam * Fx / (smoothsqrt(Fx * Fx) + ϵ)))
 
 # primal feasibility
@@ -91,7 +84,7 @@ primal_friction = mu * Fz - smoothsqrt(Fx * Fx)  # uN = Ff
 constr = cs.vertcat(constr, cs.SX(primal_friction))  # friction cone
 
 # relaxed complementarity aka compl. slackness
-constr = cs.vertcat(constr, cs.SX(s1 - Fz * zk))  # ground penetration
+constr = cs.vertcat(constr, cs.SX(s1 - Fz * zk1))  # ground penetration
 constr = cs.vertcat(constr, cs.SX(s2 - lam * primal_friction))  # friction
 
 opt_variables = cs.vertcat(Xk1, F, s1, s2, lam)
@@ -101,7 +94,7 @@ opts = {
     "print_time": 0,
     "ipopt.print_level": 0,
     "ipopt.tol": ϵ,
-    "ipopt.max_iter": 1000,
+    "ipopt.max_iter": 1500,
 }
 solver = cs.nlpsol("S", "ipopt", lcp, opts)
 
@@ -144,25 +137,23 @@ for k in range(N - 1):
 
 x_hist = X_hist[:, 0]
 z_hist = X_hist[:, 1]
-# plot w.r.t. time
-fig, axs = plt.subplots(7, sharex="all")
-fig.suptitle("Body Position vs Time")
-plt.xlabel("timesteps")
-axs[0].plot(range(N), x_hist)
-axs[0].set_ylabel("x (m)")
-axs[1].plot(range(N), z_hist)
-axs[1].set_ylabel("z (m)")
-axs[2].plot(range(N), Fx_hist)
-axs[2].set_ylabel("Fx (N)")
-axs[3].plot(range(N), Fz_hist)
-axs[3].set_ylabel("Fz (N)")
-axs[4].plot(range(N), s1_hist)
-axs[4].set_ylabel("slack var1")
-axs[5].plot(range(N), s2_hist)
-axs[5].set_ylabel("slack var2")
-axs[6].plot(range(N), lam_hist)
-axs[6].set_ylabel("lambda")
-plt.show()
+dx_hist = X_hist[:, 2]
+dz_hist = X_hist[:, 3]
+
+# plotting stuff
+name = "2d_confr_lcp_tstep"
+hists = {
+    "x (m)": x_hist,
+    "z (m)": z_hist,
+    "dx (m)": dx_hist,
+    "dz (m)": dz_hist,
+    "Fx (N)": Fx_hist,
+    "Fz (N)": Fz_hist,
+    "slack var1": s1_hist,
+    "slack var2": s2_hist,
+    "lambda": lam_hist,
+}
+plotting.plot_2d_hist(hists, N, name)
 
 # generate animation
-plotting.animate(x_hist=x_hist, z_hist=z_hist, dt=dt, name="2d_confr_lcp_tstep")
+plotting.animate(x_hist=x_hist, z_hist=z_hist, dt=dt, name=name)

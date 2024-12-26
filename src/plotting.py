@@ -11,10 +11,10 @@ def animate(
     name: str,
     xlim: list = [0, 2],
     ylim: list = [0, 2],
+    frames=30,
 ):
     # generate animation
     path_dir_imgs, path_dir_gif = os_utils.prep_animation()
-    frames = 10  # save a snapshot every X frames
     j = 0
     N = np.shape(x_hist)[0]
     print("Animating...")
@@ -40,3 +40,24 @@ def animate(
     os_utils.convert_gif(
         path_dir_imgs=path_dir_imgs, path_dir_output=path_dir_gif, file_name=name
     )
+
+
+def plot_2d_hist(
+    hists: dict,
+    N: int,
+    name: str,
+):
+    # plot w.r.t. time
+    fig, axs = plt.subplots(len(hists), sharex="all")
+    fig.suptitle(name)
+    plt.xlabel("timesteps")
+    i = 0
+    for key, value in hists.items():
+        axs[i].plot(range(len(value)), value)
+        axs[i].set_ylabel(key)
+        i += 1
+    fig = plt.gcf()
+    fig.tight_layout()
+    fig.set_size_inches(10, 10)
+    plt.savefig("results/" + name + ".png")
+    plt.close()

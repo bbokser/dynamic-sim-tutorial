@@ -1,5 +1,4 @@
 import numpy as np
-import matplotlib.pyplot as plt
 from scipy.linalg import expm
 import casadi as cs
 
@@ -20,7 +19,7 @@ g = 9.81  # gravitational constant
 A = np.array([[0, 0, 1, 0], [0, 0, 0, 1], [0, 0, 0, 0], [0, 0, 0, 0]])
 B = np.array([[0, 0], [0, 0], [1 / m, 0], [0, 1 / m]])
 G = np.array([[0, 0, 0, -9.81]]).T
-dt = 0.002  # timestep size
+dt = 0.001  # timestep size
 mu = 0.1  # coefficient of friction
 
 # Discretize by matrix exponential method
@@ -36,7 +35,7 @@ Gd = M[0:n_a, n_a + n_u :]
 
 X_0 = np.array([[0, 1, 1, 0]])
 
-N = 500  # number of timesteps 5000
+N = 1500  # number of timesteps
 n_x = (N - 1) * (n_a + n_u)  # number of states in x
 
 ABI = np.hstack((Ad, Bd, -np.eye(n_a)))
@@ -74,18 +73,19 @@ d_eq[0:n_a] += np.reshape(-Ad @ X_0.T, (-1, 1))
 #     | dzN |
 
 x = cs.SX.sym("x", n_x)  # combination of states and controls (grfs)
-s1 = cs.SX.sym("s1", N - 1)  # slack variable 1
+s1 = cs.SX.sym("s1", N - 2)  # slack variable 1
 s2 = cs.SX.sym("s2", N - 1)  # slack variable 2
 lam = cs.SX.sym("lam", N - 1)  # lagrange mult for ground vel
 
-Q = np.eye(N - 1)
+Q1 = np.eye(N - 2)
+Q2 = np.eye(N - 1)
 n_t = n_a + n_u  # length of state + control vector
 Fx = x[0::n_t]  # friction force
 Fz = x[1::n_t]  # grf
 z = x[3::n_t]  # signed distance
 dx = x[4::n_t]  # horizontal vel
-
-obj = s1.T @ Q @ s1 + s2.T @ Q @ s2
+zk1 = x[7::n_t]  # signed distance, next timestep
+obj = s1.T @ Q1 @ s1 + s2.T @ Q2 @ s2
 
 constr = []  # init constraints
 # dynamics
@@ -97,7 +97,7 @@ primal_friction = mu * Fz - smoothsqrt(Fx * Fx)  # uN = Ff
 constr = cs.vertcat(constr, cs.SX(primal_friction))  # friction cone
 
 # relaxed complementarity
-constr = cs.vertcat(constr, cs.SX(s1 - Fz * z))  # ground penetration
+constr = cs.vertcat(constr, cs.SX(s1 - Fz[:-1] * zk1))  # ground penetration
 constr = cs.vertcat(constr, cs.SX(s2 - lam * primal_friction))  # friction
 opt_variables = cs.vertcat(x, s1, s2, lam)
 lcp = {"x": opt_variables, "f": obj, "g": constr}
@@ -144,25 +144,18 @@ s1_hist = np.array(x_sol[n_a + 1 :: n_t])
 s2_hist = np.array(x_sol[n_a + 1 :: n_t])
 lam_hist = np.array(x_sol[n_a + 1 :: n_t])
 
-# plot w.r.t. time
-fig, axs = plt.subplots(7, sharex="all")
-fig.suptitle("Body Position vs Time")
-plt.xlabel("timesteps")
-axs[0].plot(range(N), x_hist)
-axs[0].set_ylabel("x (m)")
-axs[1].plot(range(N), z_hist)
-axs[1].set_ylabel("z (m)")
-axs[2].plot(range(N), Fx_hist)
-axs[2].set_ylabel("Fx (N)")
-axs[3].plot(range(N), Fz_hist)
-axs[3].set_ylabel("Fz (N)")
-axs[4].plot(range(N), s1_hist)
-axs[4].set_ylabel("slack var1")
-axs[5].plot(range(N), s2_hist)
-axs[5].set_ylabel("slack var2")
-axs[6].plot(range(N), lam_hist)
-axs[6].set_ylabel("lambda")
-plt.show()
-
+name = "2d_confr_lcp_rollout"
+hists = {
+    "x (m)": x_hist,
+    "z (m)": z_hist,
+    "dx (m)": dx_hist,
+    "dz (m)": dz_hist,
+    "Fx (N)": Fx_hist,
+    "Fz (N)": Fz_hist,
+    "slack var1": s1_hist,
+    "slack var2": s2_hist,
+    "lambda": lam_hist,
+}
+plotting.plot_2d_hist(hists, N, name)
 # generate animation
-plotting.animate(x_hist=x_hist, z_hist=z_hist, dt=dt, name="2d_confr_lcp_rollout")
+plotting.animate(x_hist=x_hist, z_hist=z_hist, dt=dt, name=name)
