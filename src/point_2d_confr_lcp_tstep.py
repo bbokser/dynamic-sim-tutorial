@@ -19,17 +19,12 @@ A = np.array([[0, 0, 1, 0], [0, 0, 0, 1], [0, 0, 0, 0], [0, 0, 0, 0]])
 B = np.array([[0, 0], [0, 0], [1 / m, 0], [0, 1 / m]])
 G = np.array([[0, 0, 0, -9.81]]).T
 dt = 0.001  # timestep size
-mu = 0.1  # coefficient of friction
+mu = 0.2  # coefficient of friction
 
 
 def dynamics_ct(X, U):
     dX = A @ X + B @ U + G.flatten()
     return dX
-
-
-def integrator_euler(dyn_ct, xk, uk):
-    X_next = xk + dt * dyn_ct(xk, uk)
-    return X_next
 
 
 def integrator_euler_semi_implicit(dyn_ct, xk, uk, xk1):
@@ -67,7 +62,7 @@ xk1 = Xk1[0]  # horz pos
 zk1 = Xk1[1]  # vert pos
 # dxk1 = Xk1[2]  # horizontal vel
 dzk1 = Xk1[3]  # vertical vel
-obj = s1 + s2
+obj = s1**2 + s2**2
 
 constr = []  # init constraints
 # dynamics A*X(k) + B*U(k) + G(k) - X(k+1) = 0
@@ -153,7 +148,7 @@ hists = {
     "slack var2": s2_hist,
     "lambda": lam_hist,
 }
-plotting.plot_2d_hist(hists, N, name)
+plotting.plot_hist(hists, name)
 
 # generate animation
 plotting.animate(x_hist=x_hist, z_hist=z_hist, dt=dt, name=name)

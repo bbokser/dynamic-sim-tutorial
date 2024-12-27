@@ -66,7 +66,7 @@ hists = {
     "Fx (N)": Fx_hist,
     "Fz (N)": Fz_hist,
 }
-plotting.plot_2d_hist(hists, N, name)
+plotting.plot_hist(hists, name)
 
 # generate animation
 plotting.animate(x_hist=X_hist[:, 0], z_hist=X_hist[:, 1], dt=dt, name=name)

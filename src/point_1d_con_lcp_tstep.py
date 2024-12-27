@@ -1,13 +1,14 @@
 import numpy as np
-import matplotlib.pyplot as plt
+import plotting
 from scipy.linalg import expm
 import casadi as cs
 
 import plotting
 
+ϵ = 1e-6
+
 
 def smoothsqrt(x):
-    ϵ = 1e-6
     return np.sqrt(x + ϵ * ϵ) - ϵ
 
 
@@ -18,7 +19,7 @@ g = 9.81  # gravitational constant
 A = np.array([[0, 1], [0, 0]])
 B = np.array([[0], [1 / m]])
 G = np.array([[0], [-g]])
-dt = 0.002  # timestep size
+dt = 0.001  # timestep size
 
 # Discretize by matrix exponential method
 ABG = np.vstack((np.hstack((A, B, G)), np.zeros((n_a, n_a + n_u + 1))))
@@ -28,9 +29,10 @@ Bd = M[0:n_a, n_a : n_a + n_u]
 Gd = M[0:n_a, n_a + n_u :]
 
 X_0 = np.array([1, 0])
-N = 500
+N = 1000
 X_hist = np.zeros((N, n_a))  # array of state vectors for each timestep
 F_hist = np.zeros(N)  # array of z GRF forces for each timestep
+s_hist = np.zeros(N)  # array of slack var values for each timestep
 X_hist[0, :] = X_0
 U_hist = np.zeros((N - 1, n_u))  # array of control vectors for each timestep
 
@@ -44,7 +46,7 @@ U = cs.SX.sym("U", n_u)  # controls
 z = Xk1[0]  # vert pos
 dz = Xk1[1]  # vertical vel
 
-obj = s
+obj = s**2
 
 constr = []  # init constraints
 # dynamics A*X(k) + B*U(k) + G(k) - X(k+1) = 0
@@ -60,8 +62,8 @@ lcp = {"x": opt_variables, "p": parameters, "f": obj, "g": constr}
 opts = {
     "print_time": 0,
     "ipopt.print_level": 0,
-    # "ipopt.tol": 1e-4,
-    # "ipopt.max_iter": 1000,
+    "ipopt.tol": ϵ,
+    "ipopt.max_iter": 500,
 }
 solver = cs.nlpsol("S", "ipopt", lcp, opts)
 
@@ -93,25 +95,26 @@ for k in range(N - 1):
     sol = solver(lbx=lbx, ubx=ubx, lbg=lbg, ubg=ubg, p=p_values, x0=x0_values)
     X_hist[k + 1, :] = np.reshape(sol["x"][0:n_a], (-1,))
     F_hist[k] = sol["x"][n_a]
+    s_hist[k] = sol["x"][n_a + n_u]
 
 pos_hist = X_hist[:, 0]
 vel_hist = X_hist[:, 1]
-fig, axs = plt.subplots(3, sharex="all")
-fig.suptitle("Body Position vs Time")
-plt.xlabel("timesteps")
-axs[0].plot(range(N), pos_hist)
-axs[0].set_ylabel("z (m)")
-axs[0].set_ylim([-0.5, 1])
-axs[1].plot(range(N), vel_hist)
-axs[1].set_ylabel("z dot (m/s)")
-axs[2].plot(range(N), F_hist)
-axs[2].set_ylabel("z GRF (N)")
-plt.show()
 
+# plotting stuff
+name = "1d_con_lcp_tstep"
+hists = {
+    "z (m)": pos_hist,
+    "dz (m)": vel_hist,
+    "Fz (N)": F_hist,
+    "slack var": s_hist,
+}
+plotting.plot_hist(hists, name)
+
+# generate animation
 plotting.animate(
     x_hist=np.zeros(N),
     z_hist=pos_hist,
     dt=dt,
-    name="1d_con_lcp_tstep",
+    name=name,
     xlim=[-1, 1],
 )

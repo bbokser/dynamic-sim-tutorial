@@ -42,9 +42,8 @@ def animate(
     )
 
 
-def plot_2d_hist(
+def plot_hist(
     hists: dict,
-    N: int,
     name: str,
 ):
     # plot w.r.t. time

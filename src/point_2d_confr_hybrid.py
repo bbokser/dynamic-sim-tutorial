@@ -11,7 +11,7 @@ B = np.array([[0, 0], [0, 0], [1 / m, 0], [0, 1 / m]])
 G = np.array([[0, 0, 0, -9.81]]).T
 dt = 0.001  # timestep size
 e = 0.0  # coefficient of restitution
-mu = 0.1  # coefficient of friction
+mu = 0.2  # coefficient of friction
 
 
 def dynamics_ct(X, U):
@@ -75,6 +75,6 @@ hists = {
     "Fx (N)": Fx_hist,
     "Fz (N)": Fz_hist,
 }
-plotting.plot_2d_hist(hists, N, name)
+plotting.plot_hist(hists, name)
 
 plotting.animate(x_hist=X_hist[:, 0], z_hist=X_hist[:, 1], dt=dt, name=name)

@@ -156,6 +156,6 @@ hists = {
     "slack var2": s2_hist,
     "lambda": lam_hist,
 }
-plotting.plot_2d_hist(hists, N, name)
+plotting.plot_hist(hists, name)
 # generate animation
 plotting.animate(x_hist=x_hist, z_hist=z_hist, dt=dt, name=name)
