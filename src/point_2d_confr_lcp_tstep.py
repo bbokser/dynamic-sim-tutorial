@@ -3,7 +3,7 @@ import casadi as cs
 
 import plotting
 
-ϵ = 1e-6
+ϵ = 1e-4
 
 
 def smoothsqrt(x):
@@ -31,7 +31,6 @@ def integrator_euler_semi_implicit(dyn_ct, xk, uk, xk1):
     xk_semi = cs.SX.zeros(n_a)
     xk_semi[:2] = xk[:2]
     xk_semi[2:] = xk1[2:]
-    # X_next = xk + dt * dyn_ct(xk1, uk)
     X_next = xk + dt * dyn_ct(xk_semi, uk)
     return X_next
 
