@@ -135,7 +135,7 @@ dx_hist = X_hist[:, 2]
 dz_hist = X_hist[:, 3]
 
 # plotting stuff
-name = "2d_confr_lcp_tstep"
+name = "2d_confr_tstep"
 hists = {
     "x (m)": x_hist,
     "z (m)": z_hist,

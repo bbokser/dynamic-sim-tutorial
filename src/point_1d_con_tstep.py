@@ -101,7 +101,7 @@ pos_hist = X_hist[:, 0]
 vel_hist = X_hist[:, 1]
 
 # plotting stuff
-name = "1d_con_lcp_tstep"
+name = "1d_con_tstep"
 hists = {
     "z (m)": pos_hist,
     "dz (m)": vel_hist,

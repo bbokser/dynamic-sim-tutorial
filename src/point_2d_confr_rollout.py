@@ -144,7 +144,7 @@ s1_hist = np.array(x_sol[n_a + 1 :: n_t])
 s2_hist = np.array(x_sol[n_a + 1 :: n_t])
 lam_hist = np.array(x_sol[n_a + 1 :: n_t])
 
-name = "2d_confr_lcp_rollout"
+name = "2d_confr_rollout"
 hists = {
     "x (m)": x_hist,
     "z (m)": z_hist,

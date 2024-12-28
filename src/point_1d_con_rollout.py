@@ -87,19 +87,23 @@ x_sol = sol["x"][:n_x]
 F_hist = np.array(x_sol[0::n_au])
 pos_hist = np.array(x_sol[1::n_au])
 vel_hist = np.array(x_sol[2::n_au])
+s_hist = np.array(sol["x"][n_x:])
 
-fig, axs = plt.subplots(3, sharex="all")
-fig.suptitle("Body Position vs Time")
-plt.xlabel("timesteps")
-axs[0].plot(range(N - 1), pos_hist)
-axs[0].set_ylabel("z (m)")
-axs[0].set_ylim([-0.5, 1])
-axs[1].plot(range(N - 1), vel_hist)
-axs[1].set_ylabel("z dot (m/s)")
-axs[2].plot(range(N - 1), F_hist)
-axs[2].set_ylabel("z GRF (N)")
-plt.show()
+# plotting stuff
+name = "1d_con_lcp_rollout"
+hists = {
+    "z (m)": pos_hist,
+    "dz (m)": vel_hist,
+    "Fz (N)": F_hist,
+    "slack var": s_hist,
+}
+plotting.plot_hist(hists, name)
 
+# generate animation
 plotting.animate(
-    x_hist=np.zeros(N), z_hist=pos_hist, dt=dt, name="1d_con_lcp_rollout", xlim=[-1, 1]
+    x_hist=np.zeros(N),
+    z_hist=pos_hist,
+    dt=dt,
+    name=name,
+    xlim=[-1, 1],
 )
