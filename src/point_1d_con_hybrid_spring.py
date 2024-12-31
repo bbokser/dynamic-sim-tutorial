@@ -11,7 +11,7 @@ A_spring = np.array([[0, 1], [-k / m, -b / m]])
 B = np.array([[0], [1 / m]])
 G = np.array([[0], [-9.81]])
 dt = 0.001  # timestep size
-e = 0.7  # coefficient of restitution
+e = 0.0  # coefficient of restitution
 
 
 def dynamics_ct(X, U):
@@ -41,7 +41,7 @@ def jump_map(X):  #
     return X, F
 
 
-N = 3000  # number of timesteps
+N = 1000  # number of timesteps
 X_hist = np.zeros((N, n_x))  # array of state vectors for each timestep
 F_hist = np.zeros((N, 1))  # array of state vectors for each timestep
 X_hist[0, :] = np.array([[1, 0]])
@@ -62,7 +62,8 @@ hists = {
     "dz (m)": X_hist[:, 1],
     "Fz (N)": F_hist,
 }
-plotting.plot_hist(hists, name)
+ylims = {2: [0, 1000]}
+plotting.plot_hist(hists, name, ylims)
 
 # generate animation
 plotting.animate(

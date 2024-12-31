@@ -45,21 +45,22 @@ def animate(
 def plot_hist(
     hists: dict,
     name: str,
-    ylim: list = None,
+    ylims: dict = {},
 ):
     # plot w.r.t. time
     fig, axs = plt.subplots(len(hists), sharex="all")
     fig.suptitle(name)
     plt.xlabel("timesteps")
-    try:
-        plt.ylim(ylim)
-    except:
-        pass
+
     i = 0
     for key, value in hists.items():
         axs[i].plot(range(len(value)), value)
         axs[i].set_ylabel(key)
         i += 1
+
+    for key, value in ylims.items():
+        axs[key].set_ylim(value)
+
     fig = plt.gcf()
     fig.tight_layout()
     fig.set_size_inches(10, 10)

@@ -49,7 +49,8 @@ def main():
         "dz (m)": X_hist[:, 1],
         "Fz (N)": F_hist,
     }
-    plotting.plot_hist(hists, name, ylim=[0, 1500])
+    ylims = {2: [0, 1000]}
+    plotting.plot_hist(hists, name, ylims)
 
     # generate animation
     plotting.animate(

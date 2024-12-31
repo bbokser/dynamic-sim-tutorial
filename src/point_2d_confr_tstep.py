@@ -66,7 +66,7 @@ obj = s1**2 + s2**2
 constr = []  # init constraints
 # dynamics A*X(k) + B*U(k) + G(k) - X(k+1) = 0
 constr = cs.vertcat(
-    constr, cs.SX(integrator_euler_semi_implicit(dynamics_ct, X, F, Xk1) - Xk1)
+    constr, cs.SX(integrator_euler_semi_implicit(dynamics_ct, X, U + F, Xk1) - Xk1)
 )
 
 # tang. gnd vel is zero if GRF is zero but is otherwise equal to dx

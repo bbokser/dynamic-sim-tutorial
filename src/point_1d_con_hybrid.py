@@ -55,10 +55,11 @@ hists = {
     "dz (m)": X_hist[:, 1],
     "Fz (N)": F_hist,
 }
+ylims = {2: [0, 1000]}
 plotting.plot_hist(
     hists,
     name,
-    ylim=[0, 1000],
+    ylims,
 )
 
 # generate animation
