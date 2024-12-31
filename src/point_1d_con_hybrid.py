@@ -20,7 +20,7 @@ def integrator_euler(dyn_ct, xk, uk):
     return X_next
 
 
-e = 0.0  # 7  # coefficient of restitution
+e = 0.  # coefficient of restitution
 
 
 def jump_map(X):  #
@@ -42,7 +42,7 @@ X_hist[0, :] = np.array([[1, 0]])
 U_hist = np.zeros((N - 1, n_u))  # array of control vectors for each timestep
 
 for k in range(N - 1):
-    if X_hist[k, 0] < 0:  # guard function
+    if X_hist[k, 0] <= 0:  # guard function
         X_hist[k, :], F_hist[k, :] = jump_map(
             X_hist[k, :]
         )  # dynamics rewrite based on impact

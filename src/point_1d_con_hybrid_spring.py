@@ -59,7 +59,7 @@ for k in range(N - 1):
 name = "1d_con_hybrid_spring"
 hists = {
     "z (m)": X_hist[:, 0],
-    "dz (m)": X_hist[:, 1],
+    "dz (m/s)": X_hist[:, 1],
     "Fz (N)": F_hist,
 }
 ylims = {2: [0, 1000]}

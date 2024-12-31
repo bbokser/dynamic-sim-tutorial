@@ -17,13 +17,13 @@ def get_forces(X):
     z = X[1]
     dx = X[2]
     dz = X[3]
-    c = -0.01  # inflection point
-    phi = np.clip(
-        z, a_min=c + 0.005, a_max=np.inf
-    )  # signed distance. clip to just above inflection point
-    distance_fn = 1 / (-c + phi) ** 2  # y = 1/x^2 relation
-    F_spring = 0.02 * distance_fn  # spring constant inversely related to position
-    F_damper = -0.02 * dz * distance_fn  # damper constant inversely related to position
+    k = 0.01  # spring constant
+    b = 0.1  # damping constant
+    amp = 1500  # desired max force
+    c = amp * 0.5 / k
+    distance_fn = -c * np.tanh(z * 100) + c
+    F_spring = k * distance_fn
+    F_damper = -b * dz * distance_fn
     Fz = F_spring + F_damper
     Fx = -mu * Fz * np.sign(dx)
     a_x = Fx / m
