@@ -25,13 +25,6 @@ def integrator_euler_semi_implicit(dyn_ct, xk, uk, xk1):
     return X_next
 
 
-# Discretize by matrix exponential method
-ABG = np.vstack((np.hstack((A, B, G)), np.zeros((n_a, n_a + n_u + 1))))
-M = expm(ABG * dt)
-Ad = M[0:n_a, 0:n_a]
-Bd = M[0:n_a, n_a : n_a + n_u]
-Gd = M[0:n_a, n_a + n_u :]
-
 X_0 = np.array([1, 0])
 N = 1000
 X_hist = np.zeros((N, n_a))  # array of state vectors for each timestep
@@ -107,7 +100,7 @@ vel_hist = X_hist[:, 1]
 name = "1d_con_tstep"
 hists = {
     "z (m)": pos_hist,
-    "dz (m)": vel_hist,
+    "dz (m/s)": vel_hist,
     "Fz (N)": F_hist,
     "slack var": s_hist,
 }

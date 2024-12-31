@@ -92,7 +92,7 @@ s_hist = np.array(sol["x"][n_x:])
 name = "1d_con_lcp_rollout"
 hists = {
     "z (m)": pos_hist,
-    "dz (m)": vel_hist,
+    "dz (m/s)": vel_hist,
     "Fz (N)": F_hist,
     "slack var": s_hist,
 }

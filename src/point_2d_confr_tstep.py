@@ -139,8 +139,8 @@ name = "2d_confr_tstep"
 hists = {
     "x (m)": x_hist,
     "z (m)": z_hist,
-    "dx (m)": dx_hist,
-    "dz (m)": dz_hist,
+    "dx (m/s)": dx_hist,
+    "dz (m/s)": dz_hist,
     "Fx (N)": Fx_hist,
     "Fz (N)": Fz_hist,
     "slack var1": s1_hist,

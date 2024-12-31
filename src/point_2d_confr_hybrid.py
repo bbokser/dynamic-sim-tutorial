@@ -70,8 +70,8 @@ name = "2d_confr_hybrid"
 hists = {
     "x (m)": X_hist[:, 0],
     "z (m)": X_hist[:, 1],
-    "dx (m)": X_hist[:, 2],
-    "dz (m)": X_hist[:, 3],
+    "dx (m/s)": X_hist[:, 2],
+    "dz (m/s)": X_hist[:, 3],
     "Fx (N)": Fx_hist,
     "Fz (N)": Fz_hist,
 }
