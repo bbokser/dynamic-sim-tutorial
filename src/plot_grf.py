@@ -7,7 +7,7 @@ F_hist = np.zeros(N)
 z_hist = np.zeros(N)
 X = np.zeros(2)
 k = 0
-for z in np.linspace(0.5, -0.05, N):
+for z in np.linspace(0.5, -0.2, N):
     X[0] = z
     F_hist[k] = get_grf(X)
     z_hist[k] = X[0]
@@ -17,8 +17,7 @@ plt.plot(z_hist, F_hist)
 plt.title("GRF vs Signed Distance")
 plt.ylabel("GRF (N)")
 plt.xlabel("Signed Distance (m)")
-# plt.legend()
-# plt.show()
+plt.grid()
 fig = plt.gcf()
 fig.tight_layout()
 fig.set_size_inches(10, 10)

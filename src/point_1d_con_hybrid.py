@@ -20,7 +20,7 @@ def integrator_euler(dyn_ct, xk, uk):
     return X_next
 
 
-e = 0.7  # coefficient of restitution
+e = 0.0  # 7  # coefficient of restitution
 
 
 def jump_map(X):  #
@@ -35,7 +35,7 @@ def jump_map(X):  #
     return X, F
 
 
-N = 3000  # number of timesteps
+N = 1000  # number of timesteps
 X_hist = np.zeros((N, n_x))  # array of state vectors for each timestep
 F_hist = np.zeros((N, 1))  # array of state vectors for each timestep
 X_hist[0, :] = np.array([[1, 0]])
@@ -55,7 +55,11 @@ hists = {
     "dz (m)": X_hist[:, 1],
     "Fz (N)": F_hist,
 }
-plotting.plot_hist(hists, name)
+plotting.plot_hist(
+    hists,
+    name,
+    ylim=[0, 1000],
+)
 
 # generate animation
 plotting.animate(

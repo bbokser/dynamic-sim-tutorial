@@ -5,13 +5,6 @@ import casadi as cs
 
 import plotting
 
-ϵ = 1e-6
-
-
-def smoothsqrt(x):
-    return np.sqrt(x + ϵ * ϵ) - ϵ
-
-
 n_a = 2  # length of state vector
 n_u = 1  # length of control vector
 m = 10  # mass of the rocket in kg
@@ -21,12 +14,22 @@ B = np.array([[0], [1 / m]])
 G = np.array([[0], [-g]])
 dt = 0.001  # timestep size
 
-# Discretize by matrix exponential method
-ABG = np.vstack((np.hstack((A, B, G)), np.zeros((n_a, n_a + n_u + 1))))
-M = expm(ABG * dt)
-Ad = M[0:n_a, 0:n_a]
-Bd = M[0:n_a, n_a : n_a + n_u]
-Gd = M[0:n_a, n_a + n_u :]
+
+# # Discretize by matrix exponential method
+# ABG = np.vstack((np.hstack((A, B, G)), np.zeros((n_a, n_a + n_u + 1))))
+# M = expm(ABG * dt)
+# Ad = M[0:n_a, 0:n_a]
+# Bd = M[0:n_a, n_a : n_a + n_u]
+# Gd = M[0:n_a, n_a + n_u :]
+def dynamics_ct(X, U):
+    dX = A @ X + B @ U + G.flatten()
+    return dX
+
+
+def integrator_euler(dyn_ct, xk, uk):
+    X_next = xk + dt * dyn_ct(xk, uk)
+    return X_next
+
 
 X_0 = np.array([1, 0])
 N = 1000
@@ -43,17 +46,17 @@ s = cs.SX.sym("s", 1)  # slack variable
 X = cs.SX.sym("X", n_a)  # state
 U = cs.SX.sym("U", n_u)  # controls
 
-z = Xk1[0]  # vert pos
-dz = Xk1[1]  # vertical vel
+zk1 = Xk1[0]  # vert pos
+dzk1 = Xk1[1]  # vertical vel
 
 obj = s**2
 
 constr = []  # init constraints
-# dynamics A*X(k) + B*U(k) + G(k) - X(k+1) = 0
-constr = cs.vertcat(constr, cs.SX(Ad @ X + Bd @ U + Bd @ F + Gd - Xk1))
+# constr = cs.vertcat(constr, cs.SX(Ad @ X + Bd @ U + Bd @ F + Gd - Xk1))
+constr = cs.vertcat(constr, cs.SX(integrator_euler(dynamics_ct, X, U) - Xk1))
 
 # relaxed complementarity aka compl. slackness
-constr = cs.vertcat(constr, cs.SX(s - F * z))  # ground penetration
+constr = cs.vertcat(constr, cs.SX(s - F * zk1))  # ground penetration
 
 opt_variables = cs.vertcat(Xk1, F, s)
 # parameters = X
@@ -62,7 +65,7 @@ lcp = {"x": opt_variables, "p": parameters, "f": obj, "g": constr}
 opts = {
     "print_time": 0,
     "ipopt.print_level": 0,
-    "ipopt.tol": ϵ,
+    "ipopt.tol": 1e-6,
     "ipopt.max_iter": 500,
 }
 solver = cs.nlpsol("S", "ipopt", lcp, opts)
@@ -74,7 +77,6 @@ n_g = np.shape(constr)[0]
 # variable bounds
 ubx = [1e10] * n_var
 lbx = [-1e10] * n_var
-# dual feasibility
 lbx[0] = 0  # set z positive only
 lbx[n_a] = 0  # set F positive only
 lbx[-1] = 0  # set slack variable >= 0
