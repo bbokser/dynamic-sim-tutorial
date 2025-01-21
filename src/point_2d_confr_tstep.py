@@ -13,13 +13,13 @@ def smoothsqrt(x):
 n_a = 4  # length of state vector
 n_u = 2  # length of control vector
 
-m = 10  # mass of the rocket in kg
+m = 10  # mass of the particle in kg
 g = 9.81  # gravitational constant
 A = np.array([[0, 0, 1, 0], [0, 0, 0, 1], [0, 0, 0, 0], [0, 0, 0, 0]])
 B = np.array([[0, 0], [0, 0], [1 / m, 0], [0, 1 / m]])
-G = np.array([[0, 0, 0, -9.81]]).T
+G = np.array([[0, 0, 0, -g]]).T
 dt = 0.001  # timestep size
-mu = 0.2  # coefficient of friction
+mu = 0.1  # coefficient of friction
 
 
 def dynamics_ct(X, U):
@@ -35,7 +35,7 @@ def integrator_euler_semi_implicit(dyn_ct, xk, uk, xk1):
     return X_next
 
 
-N = 1500  # number of timesteps
+N = 1200  # number of timesteps
 X_hist = np.zeros((N, n_a))  # array of state vectors for each timestep
 Fx_hist = np.zeros(N)  # array of x friction forces for each timestep
 Fz_hist = np.zeros(N)  # array of z GRF forces for each timestep
@@ -59,12 +59,12 @@ Fz = F[1]  # grf
 
 xk1 = Xk1[0]  # horz pos
 zk1 = Xk1[1]  # vert pos
-# dxk1 = Xk1[2]  # horizontal vel
-dzk1 = Xk1[3]  # vertical vel
+
+# objective function
 obj = s1**2 + s2**2
 
 constr = []  # init constraints
-# dynamics A*X(k) + B*U(k) + G(k) - X(k+1) = 0
+# dynamics
 constr = cs.vertcat(
     constr, cs.SX(integrator_euler_semi_implicit(dynamics_ct, X, U + F, Xk1) - Xk1)
 )
@@ -88,7 +88,7 @@ opts = {
     "print_time": 0,
     "ipopt.print_level": 0,
     "ipopt.tol": ϵ,
-    "ipopt.max_iter": 1500,
+    "ipopt.max_iter": 2000,
 }
 solver = cs.nlpsol("S", "ipopt", lcp, opts)
 
@@ -143,9 +143,9 @@ hists = {
     "dz (m/s)": dz_hist,
     "Fx (N)": Fx_hist,
     "Fz (N)": Fz_hist,
-    "slack var1": s1_hist,
-    "slack var2": s2_hist,
-    "lambda": lam_hist,
+    # "slack var1": s1_hist,
+    # "slack var2": s2_hist,
+    # "lambda": lam_hist,
 }
 plotting.plot_hist(hists, name)
 

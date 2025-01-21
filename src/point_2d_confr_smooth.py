@@ -3,7 +3,7 @@ import plotting
 
 n_x = 4  # length of state vector
 n_u = 2  # length of control vector
-m = 10  # mass of the rocket in kg
+m = 10  # mass of the particle in kg
 A = np.array([[0, 0, 1, 0], [0, 0, 0, 1], [0, 0, 0, 0], [0, 0, 0, 0]])
 
 B = np.array([[0, 0], [0, 0], [1 / m, 0], [0, 1 / m]])
@@ -43,7 +43,7 @@ def integrator_euler(dyn_ct, xk, uk):
     return X_next
 
 
-N = 1500  # number of timesteps
+N = 1200  # number of timesteps
 X_hist = np.zeros((N, n_x))  # array of state vectors for each timestep
 Fx_hist = np.zeros(N)  # array of x GRF forces for each timestep
 Fz_hist = np.zeros(N)  # array of z GRF forces for each timestep
