@@ -52,15 +52,19 @@ def plot_hist(
     fig.suptitle(name)
     plt.xlabel("timesteps")
 
-    i = 0
-    for key, value in hists.items():
-        axs[i].plot(range(len(value)), value)
-        axs[i].set_ylabel(key)
-        i += 1
+    try:
+        i = 0
+        for key, value in hists.items():
+            axs[i].plot(range(len(value)), value)
+            axs[i].set_ylabel(key)
+            i += 1
+
+    except:
+        axs.plot(range(len(value)), value)
+        axs.set_ylabel(key)
 
     for key, value in ylims.items():
         axs[key].set_ylim(value)
-
     fig = plt.gcf()
     fig.tight_layout()
     fig.set_size_inches(10, 10)

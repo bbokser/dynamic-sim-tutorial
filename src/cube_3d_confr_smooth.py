@@ -1,17 +1,17 @@
 import numpy as np
 from tqdm import tqdm
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
+
+# from mpl_toolkits.mplot3d import Axes3D
 
 import plotting
 from transforms import Lq, Rq, H, Aq
 import os_utils
 
 
-dt = 0.001
 g = 9.81
 m = 10  # mass of the particle in kg
-I = np.eye(3) * 0.01  # inertia matrix
+I = np.eye(3) * 0.1  # inertia matrix
 dt = 0.001  # timestep size
 mu = 0.1  # coefficient of friction
 # Gravitational force in world frame
@@ -44,17 +44,27 @@ def kin_corners(X: np.ndarray) -> np.ndarray:
     return r_c
 
 
-def get_grf(z: float, dz: float) -> float:
-    k = 0.01
+def get_forces(z: float, dr: np.ndarray) -> np.ndarray:
+    v_tang = dr[:2]  # tangential vel. (x and y)
+    dz = dr[2]  # z vel
+    k = 0.01  # spring constant
     b = 0.1  # damping constant
-    amp = 2e3  # desired max force
+    amp = 2000  # desired max force
     c = amp * 0.5 / k
-    distance_fn = -c * np.tanh(z * 5) + c
+    distance_fn = -c * np.tanh(z * 100) + c
     F_spring = k * distance_fn
     F_damper = -b * dz * distance_fn
-    grf = F_spring + F_damper
-    grf = np.clip(grf, 0, amp)
-    return grf
+    Fz = F_spring + F_damper
+    Fz = np.clip(Fz, 0, amp)
+    if np.linalg.norm(v_tang) == 0:
+        F_tang = np.zeros(2)
+    else:
+        F_tang = -mu * Fz * v_tang / np.linalg.norm(v_tang)
+        a_tang = F_tang / m
+        # don't let friction change the object's direction--that's not possible
+        a_tang = np.clip(a_tang * dt, -v_tang, 0) / dt
+        F_tang = a_tang * m  # update Fx
+    return np.hstack((F_tang, Fz))
 
 
 def dynamics_ct(X: np.ndarray, U: np.ndarray) -> np.ndarray:
@@ -66,10 +76,6 @@ def dynamics_ct(X: np.ndarray, U: np.ndarray) -> np.ndarray:
     ω_b = X[10:13]  # B frame
     F_w = U[0:3]  # W frame
     tau_b = U[3:]  # B frame
-
-    # add gravity
-    F_w += F_g_w
-
     dr = v_w
     dq = 0.5 * Lq(Q) @ H @ ω_b
     dv = 1 / m * F_w
@@ -98,7 +104,7 @@ X_0 = np.zeros(n_x)
 p_0 = np.array([0, 0, 3.0])
 Q_0 = np.array([1, 0, 0, 0])
 v_0 = np.array([2, 0, 0])
-ω_0 = np.array([1, 0.5, 0])
+ω_0 = np.array([0, 0, 0])
 
 X_0[:3] = p_0
 X_0[3:7] = Q_0
@@ -108,11 +114,13 @@ X_0[10:13] = ω_0
 X_hist = np.zeros((N, n_x))  # array of state vectors for each timestep
 F_hist = np.zeros((N, 3))  # array of GRF vectors for each timestep
 tau_hist = np.zeros((N, 3))  # array of reaction torque vectors for each timestep
+energy_hist = np.zeros(N)
 
 X_hist[0, :] = X_0
 U_hist = np.zeros((N - 1, n_u))  # array of control vectors for each timestep
 
 for k in range(N - 1):
+    r_w = X_hist[k, 0:3]
     Q = X_hist[k, 3:7]  # B to W
     v_w = X_hist[k, 7:10]  # W frame
     ω_b = X_hist[k, 10:13]  # B frame
@@ -125,19 +133,23 @@ for k in range(N - 1):
         # get height of corner in world frame
         z_i = r_c_w[i, 2]
         # get z aspect of linear velocity of corner in world frame
-        dr_w_i = A @ np.cross(ω_b, r_c_b[i, :])
-        dz_i = dr_w_i[2]
+        dr_i_w = A @ np.cross(ω_b, r_c_b[i, :]) + r_w
         # get world frame force on corner
-        F_c_w = np.array((0, 0, get_grf(z_i, dz_i)))
+        F_c_w = get_forces(z_i, dr_i_w)
         # add to world frame force
         F_hist[k, :] += F_c_w
         # transform force from world frame back to body frame
         F_c_b = A.T @ F_c_w
-        # add torque due to body frame force
+        # add body frame torque due to body frame force
         tau_hist[k, :] += np.cross(r_c_b[i, :], F_c_b)
-    U_hist[k, :3] = F_hist[k, :]
-    U_hist[k, 3:] = tau_hist[k, :]
-    X_hist[k + 1, :] = rk4_normalized(X_hist[k, :], U_hist[k, :])
+    # add gravity
+    F_hist[k, :] += F_g_w
+    X_hist[k + 1, :] = rk4_normalized(
+        X_hist[k, :], np.hstack((F_hist[k, :], tau_hist[k, :]))
+    )
+    energy_hist[k] = (
+        0.5 * m * np.linalg.norm(v_w) ** 2 + m * g * r_w[2] + 0.5 * ω_b.T @ I @ ω_b
+    )
     # if np.isnan(X_hist[k, 2]):
     #     break
 
@@ -145,13 +157,22 @@ for k in range(N - 1):
 name = "cube_3d_con_smooth"
 hists = {
     "z (m)": X_hist[:, 2],
+    "dx (m/s)": X_hist[:, 7],
+    "dy (m/s)": X_hist[:, 8],
+    "Fx (N)": F_hist[:, 0],
+    "Fy (N)": F_hist[:, 1],
     "Fz (N)": F_hist[:, 2],
-    "tau_x (Nm)": tau_hist[:, 0],
-    "tau_y (Nm)": tau_hist[:, 1],
-    "tau_z (Nm)": tau_hist[:, 2],
+    # "tau_x (Nm)": tau_hist[:, 0],
+    # "tau_y (Nm)": tau_hist[:, 1],
+    # "tau_z (Nm)": tau_hist[:, 2],
 }
 plotting.plot_hist(hists, name)
 
+
+hists_2 = {
+    "energy (J)": energy_hist,
+}
+plotting.plot_hist(hists_2, name + " energy")
 
 path_dir_imgs, path_dir_gif = os_utils.prep_animation()
 j = 0
@@ -181,6 +202,7 @@ for k in tqdm(range(N)[::frames]):
         va="bottom",
         transform=plt.gca().transAxes,
     )
+    fig.tight_layout()
     fig.savefig(path_dir_imgs + "/" + str(j).zfill(4) + ".png")
     plt.close()
     j += 1
