@@ -1,11 +1,12 @@
 import numpy as np
 from tqdm import tqdm
 import matplotlib.pyplot as plt
+import pyvista as pv
 
 # from mpl_toolkits.mplot3d import Axes3D
 
 import plotting
-from transforms import Lq, Rq, H, Aq
+from transforms import Lq, Rq, H, Aq, quat_to_axis_angle
 import os_utils
 
 
@@ -21,14 +22,14 @@ l = 1  # half length of cube
 # body frame locations of the 8 corners of the cube
 r_c_b = np.array(
     (
-        [l, l, l],
-        [l, -l, l],
-        [-l, -l, l],
-        [-l, l, l],
-        [l, l, -l],
-        [l, -l, -l],
-        [-l, -l, -l],
-        [-l, l, -l],
+        [-1, -1, -1],
+        [1, -1, -1],
+        [-1, 1, -1],
+        [1, 1, -1],
+        [-1, -1, 1],
+        [1, -1, 1],
+        [-1, 1, 1],
+        [1, 1, 1],
     )
 )
 
@@ -174,39 +175,32 @@ hists_2 = {
 }
 plotting.plot_hist(hists_2, name + " energy")
 
-path_dir_imgs, path_dir_gif = os_utils.prep_animation()
+# ---#
+mesh = pv.Box()
+mesh_plane = pv.Plane(i_size=20, j_size=20, i_resolution=1, j_resolution=1)
+text_obj = pv.Text(
+    "t = 0.00 s",
+    position=[0, 0],
+)
+text_obj.prop.color = "black"
+text_obj.prop.font_size = 20
+plotter = pv.Plotter(notebook=False, off_screen=True)
+plotter.add_mesh(mesh, show_edges=True, color="white")
+plotter.add_mesh(mesh_plane, show_edges=True, color="white")
+plotter.add_actor(text_obj)
+# plotter.camera.zoom(0.5)
+plotter.open_gif("results/vis.gif", fps=30, subrectangles=True)
 j = 0
 frames = 20
 for k in tqdm(range(N)[::frames]):
-    fig = plt.figure()
-    ax = fig.add_subplot(projection="3d")
     r_c = kin_corners(X_hist[k, :])
-    for i in range(8):
-        x1 = r_c[i, 0]
-        y1 = r_c[i, 1]
-        z1 = r_c[i, 2]
-        ax.scatter(x1, y1, z1)
-    ax.set_xlim(-6, 6)
-    ax.set_ylim(-6, 6)
-    ax.set_zlim(0, 12)
-    ax.set_xlabel("x (m)")
-    ax.set_ylabel("y (m)")
-    ax.set_zlabel("z (m)")
-    plt.title(name)
-    ax.text(
-        x=0.01,
-        y=0,
-        z=0,
-        s="t = " + "{:.2f}".format(round(k * dt, 2)) + "s",
-        ha="left",
-        va="bottom",
-        transform=plt.gca().transAxes,
-    )
-    fig.tight_layout()
-    fig.savefig(path_dir_imgs + "/" + str(j).zfill(4) + ".png")
-    plt.close()
-    j += 1
+    text_obj.input = "t = " + "{:.2f}".format(round(k * dt, 2)) + "s"
+    mesh.points = r_c
+    # Q_k = X_hist[k, 3:7]
+    # vector, angle = quat_to_axis_angle(Q_k)
+    # mesh.rotate_vector(vector=vector, angle=angle)  # , point=axes.origin)
+    # Write a frame. This triggers a render.
+    plotter.write_frame()
 
-os_utils.convert_gif(
-    path_dir_imgs=path_dir_imgs, path_dir_output=path_dir_gif, file_name=name
-)
+# Closes and finalizes movie
+plotter.close()

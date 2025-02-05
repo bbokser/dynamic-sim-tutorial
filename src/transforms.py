@@ -33,3 +33,18 @@ def Rq(Q):
 def Aq(Q):
     # rotation matrix from quaternion
     return H.T @ Lq(Q) @ Rq(Q).T @ H
+
+
+def quat_to_axis_angle(Q):
+    qw = Q[0]
+    qx = Q[1]
+    qy = Q[2]
+    qz = Q[3]
+    if qw == 1:
+        return np.zeros(3), 2 * np.acos(qw)
+    else:
+        angle = 2 * np.acos(qw)
+        x = qx / np.sqrt(1 - qw * qw)
+        y = qy / np.sqrt(1 - qw * qw)
+        z = qz / np.sqrt(1 - qw * qw)
+        return np.array([x, y, z]), angle
