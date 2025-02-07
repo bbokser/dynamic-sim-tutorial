@@ -15,7 +15,7 @@ def hat(w):
 def Lq(Q):
     LQ = np.zeros((4, 4))
     LQ[0, 0] = Q[0]
-    LQ[0, 1:4] = -np.transpose(Q[1:4])
+    LQ[0, 1:4] = -Q[1:4].T
     LQ[1:4, 0] = Q[1:4]
     LQ[1:4, 1:4] = Q[0] * np.eye(3) + hat(Q[1:4])
     return LQ
@@ -24,7 +24,7 @@ def Lq(Q):
 def Rq(Q):
     RQ = np.zeros((4, 4))
     RQ[0, 0] = Q[0]
-    RQ[0, 1:4] = -np.transpose(Q[1:4])
+    RQ[0, 1:4] = -Q[1:4].T
     RQ[1:4, 0] = Q[1:4]
     RQ[1:4, 1:4] = Q[0] * np.eye(3) - hat(Q[1:4])
     return RQ
@@ -33,6 +33,27 @@ def Rq(Q):
 def Aq(Q):
     # rotation matrix from quaternion
     return H.T @ Lq(Q) @ Rq(Q).T @ H
+
+
+def Gq(Q):
+    return Lq(Q) @ H
+
+
+def Ḡq(Q):
+    return np.array([np.eye(3), np.zeros((3, 3))], [np.zeros((4, 3)), Gq(Q)])
+
+
+def cay(ϕ):
+    # quaternion from Rodrigues parameters
+    # https://roboticexplorationlab.org/papers/planning_with_attitude.pdf
+    return (1 / np.sqrt(1 + ϕ.T @ ϕ)) @ np.array([1, ϕ]).T
+
+
+def cay_inv(Q):
+    # Rodrigues parameters from quaternion
+    qw = Q[0]
+    qv = Q[1:]
+    return qw / qv
 
 
 def quat_to_axis_angle(Q):

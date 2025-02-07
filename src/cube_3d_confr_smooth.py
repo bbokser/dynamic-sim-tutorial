@@ -1,13 +1,11 @@
 import numpy as np
 from tqdm import tqdm
-import matplotlib.pyplot as plt
 import pyvista as pv
 
 # from mpl_toolkits.mplot3d import Axes3D
 
 import plotting
 from transforms import Lq, Rq, H, Aq, quat_to_axis_angle
-import os_utils
 
 
 g = 9.81
@@ -50,11 +48,11 @@ def get_forces(z: float, dr: np.ndarray) -> np.ndarray:
     dz = dr[2]  # z vel
     k = 0.01  # spring constant
     b = 0.1  # damping constant
-    amp = 2000  # desired max force
+    amp = 6000  # desired max force
     c = amp * 0.5 / k
     distance_fn = -c * np.tanh(z * 100) + c
     F_spring = k * distance_fn
-    F_damper = -b * dz * distance_fn
+    F_damper = -b * dz * distance_fn * (np.sign(dz) > 0)
     Fz = F_spring + F_damper
     Fz = np.clip(Fz, 0, amp)
     if np.linalg.norm(v_tang) == 0:
@@ -189,7 +187,7 @@ plotter.add_mesh(mesh, show_edges=True, color="white")
 plotter.add_mesh(mesh_plane, show_edges=True, color="white")
 plotter.add_actor(text_obj)
 # plotter.camera.zoom(0.5)
-plotter.open_gif("results/vis.gif", fps=30, subrectangles=True)
+plotter.open_gif("results/" + name + ".gif", fps=30, subrectangles=True)
 j = 0
 frames = 20
 for k in tqdm(range(N)[::frames]):
