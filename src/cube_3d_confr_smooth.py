@@ -2,8 +2,6 @@ import numpy as np
 from tqdm import tqdm
 import pyvista as pv
 
-# from mpl_toolkits.mplot3d import Axes3D
-
 import plotting
 from transforms import Lq, Rq, H, Aq, quat_to_axis_angle
 

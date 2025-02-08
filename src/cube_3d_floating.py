@@ -1,10 +1,9 @@
 import numpy as np
 from tqdm import tqdm
-import matplotlib.pyplot as plt
+import pyvista as pv
 
 import plotting
 from transforms import Lq, Rq, H, Aq
-import os_utils
 
 
 dt = 0.001
@@ -17,14 +16,14 @@ l = 1  # half length of cube
 # body frame locations of the 8 corners of the cube
 r_c_b = np.array(
     (
-        [l, l, l],
-        [l, -l, l],
-        [-l, -l, l],
-        [-l, l, l],
-        [l, l, -l],
-        [l, -l, -l],
-        [-l, -l, -l],
-        [-l, l, -l],
+        [-1, -1, -1],
+        [1, -1, -1],
+        [-1, 1, -1],
+        [1, 1, -1],
+        [-1, -1, 1],
+        [1, -1, 1],
+        [-1, 1, 1],
+        [1, 1, 1],
     )
 )
 
@@ -104,29 +103,29 @@ hists = {
 plotting.plot_hist(hists, name)
 
 
-path_dir_imgs, path_dir_gif = os_utils.prep_animation()
-j = 0
-frames = 20
-for k in tqdm(range(N)[::frames]):
-    fig = plt.figure()
-    ax = fig.add_subplot(projection="3d")
-    r_c = kin_corners(X_hist[k, :])
-    for i in range(8):
-        x1 = r_c[i, 0]
-        y1 = r_c[i, 1]
-        z1 = r_c[i, 2]
-        ax.scatter(x1, y1, z1)
-    ax.set_xlim(-3, 3)
-    ax.set_ylim(-3, 3)
-    ax.set_zlim(0, 6)
-    ax.set_xlabel("x (m)")
-    ax.set_ylabel("y (m)")
-    ax.set_zlabel("z (m)")
-    plt.title(name)
-    fig.savefig(path_dir_imgs + "/" + str(j).zfill(4) + ".png")
-    plt.close()
-    j += 1
-
-os_utils.convert_gif(
-    path_dir_imgs=path_dir_imgs, path_dir_output=path_dir_gif, file_name=name
+# ---#
+mesh = pv.Box()
+mesh_plane = pv.Plane(i_size=20, j_size=20, i_resolution=1, j_resolution=1)
+text_obj = pv.Text(
+    "t = 0.00 s",
+    position=[0, 0],
 )
+text_obj.prop.color = "black"
+text_obj.prop.font_size = 20
+plotter = pv.Plotter(notebook=False, off_screen=True)
+plotter.add_mesh(mesh, show_edges=True, color="white")
+plotter.add_mesh(mesh_plane, show_edges=True, color="white")
+plotter.add_actor(text_obj)
+fps = 30.0
+speed = 1  # x real time
+plotter.open_gif("results/" + name + ".gif", fps=fps, subrectangles=True)
+frames = int(fps * speed)
+j = 0
+for k in tqdm(range(N)[::frames]):
+    r_c = kin_corners(X_hist[k, :])
+    text_obj.input = "t = " + "{:.2f}".format(round(k * dt, 2)) + "s"
+    mesh.points = r_c
+    plotter.write_frame()
+
+# Closes and finalizes movie
+plotter.close()

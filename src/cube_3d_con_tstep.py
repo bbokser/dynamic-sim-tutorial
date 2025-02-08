@@ -19,7 +19,7 @@ def Lq(Q):
     if isinstance(Q, np.ndarray):
         LQ = np.zeros((4, 4))
     else:
-        LQ = cs.SX.zeros((4, 4))
+        LQ = cs.SX(4, 4)
     LQ[0, 0] = Q[0]
     LQ[0, 1:4] = -Q[1:4].T
     LQ[1:4, 0] = Q[1:4]
@@ -31,7 +31,7 @@ def Rq(Q):
     if isinstance(Q, np.ndarray):
         RQ = np.zeros((4, 4))
     else:
-        RQ = cs.SX.zeros((4, 4))
+        RQ = cs.SX(4, 4)
     RQ[0, 0] = Q[0]
     RQ[0, 1:4] = -Q[1:4].T
     RQ[1:4, 0] = Q[1:4]
@@ -44,15 +44,11 @@ def Aq(Q):
     return H.T @ Lq(Q) @ Rq(Q).T @ H
 
 
-g = 9.81
-m = 10  # mass of the particle in kg
+n_a = 13  # length of state vector
+n_u = 8  # length of control vector
+m = 10  # mass of the cube in kg
 I = np.eye(3) * 0.1  # inertia matrix
 dt = 0.001  # timestep size
-mu = 0.1  # coefficient of friction
-# Gravitational force in world frame
-F_g_w = np.array([0, 0, -g]) * m
-
-l = 1  # half length of cube
 # body frame locations of the 8 corners of the cube
 r_c_b = np.array(
     (
@@ -66,8 +62,6 @@ r_c_b = np.array(
         [1, 1, 1],
     )
 )
-n_a = 13  # length of state vector
-n_u = 8  # length of control vector
 
 
 def kin_corners(X: np.ndarray) -> np.ndarray:
@@ -75,7 +69,7 @@ def kin_corners(X: np.ndarray) -> np.ndarray:
     if isinstance(X, np.ndarray):
         r_c = np.zeros((8, 3))
     else:
-        r_c = cs.SX.zeros((8, 3))
+        r_c = cs.SX(8, 3)
     r_w = X[0:3]  # W frame
     Q = X[3:7]  # B to W
     A = Aq(Q)  # rotation matrix
@@ -91,22 +85,20 @@ def dynamics_ct(X: cs.SX, U: cs.SX) -> cs.SX:
     Q = X[3:7]  # B to W
     v_w = X[7:10]  # W frame
     ω_b = X[10:13]  # B frame
-    F_w = cs.SX.zeros(3)
-    tau_b = cs.SX.zeros(3)  # torque in B frame
+    F_w = cs.SX(3, 1)  # force in W frame
+    tau_b = cs.SX(3, 1)  # torque in B frame
 
     # rotation matrix, body to world frame
     A = Aq(Q)
     # iterate through corners to calculate torque acting on body
-    for i in range(8):
-        F_i_w = cs.SX.zeros(3)
-        F_i_w[2] = U[i]
-        F_w += F_i_w
-        # transform force from world frame back to body frame
-        F_i_b = A.T @ F_i_w
+    F_c_w = cs.SX(8, 3)
+    for i in range(n_u):
+        F_c_w[i, 2] = U[i]
+        F_w += F_c_w[i, :].T
         # add body frame torque due to body frame force
-        tau_b += cs.cross(r_c_b[i, :], F_i_b)
+        tau_b += cs.cross(r_c_b[i, :], A.T @ F_c_w[i, :].T)
 
-    F_w += F_g_w  # add gravity
+    F_w += np.array([0, 0, -9.81]) * m  # gravity
 
     dr = v_w
     dq = 0.5 * Lq(Q) @ H @ ω_b
@@ -116,7 +108,7 @@ def dynamics_ct(X: cs.SX, U: cs.SX) -> cs.SX:
     return dX
 
 
-def rk4_normalized(dynamics: Callable, X_k: np.ndarray, U_k: np.ndarray) -> np.ndarray:
+def rk4_normalized(dynamics: Callable, X_k: cs.SX, U_k: cs.SX) -> cs.SX:
     # RK4 integrator solves for new X
     f1 = dynamics(X_k, U_k)
     f2 = dynamics(X_k + 0.5 * dt * f1, U_k)
@@ -127,78 +119,86 @@ def rk4_normalized(dynamics: Callable, X_k: np.ndarray, U_k: np.ndarray) -> np.n
     return X_n
 
 
+def euler_semi_implicit(
+    dynamics: Callable, X_k: cs.SX, U_k: cs.SX, X_k1: cs.SX
+) -> cs.SX:
+    # semi-implicit Euler integrator solves for new X
+    X_k_semi = cs.SX.zeros(n_a)
+    X_k_semi[:7] = X_k[:7]
+    X_k_semi[7:] = X_k1[7:]
+    X_n = X_k + dt * dynamics(X_k_semi, U_k)
+    X_n[3:7] = X_n[3:7] / cs.norm_2(X_n[3:7])  # normalize the quaternion term
+    return X_n
+
+
 # initialize casadi variables
 Xk1 = cs.SX.sym("Xk1", n_a)  # X(k+1), state at next timestep
-F = cs.SX.sym("F", n_u)  # force
+F = cs.SX.sym("F", n_u)  # force at each corner
 s = cs.SX.sym("s", n_u)  # slack variable
-X = cs.SX.sym("X", n_a)  # state
+X = cs.SX.sym("X", n_a)  # X(k), state
 
 obj = s.T @ s
 
 constr = []  # init constraints
-constr = cs.vertcat(constr, cs.SX(rk4_normalized(dynamics_ct, X, F) - Xk1))
+# constr = cs.vertcat(constr, rk4_normalized(dynamics_ct, X, F) - Xk1)
+constr = cs.vertcat(constr, euler_semi_implicit(dynamics_ct, X, F, Xk1) - Xk1)
 
 # quaternion normalization
-constr = cs.vertcat(constr, cs.norm_2(Xk1[3:7]) ** 2 - 1)
+# constr = cs.vertcat(constr, cs.norm_2(Xk1[3:7]) ** 2 - 1)
 
 # stay above the ground
-z_c_w = kin_corners(Xk1)[:, 2]
+z_c_w = kin_corners(Xk1)[:, 2]  # corner heights
 constr = cs.vertcat(constr, z_c_w)
 
 # relaxed complementarity aka compl. slackness
-constr = cs.vertcat(constr, cs.SX(s - F * z_c_w))  # ground penetration
+constr = cs.vertcat(constr, s - F * z_c_w)  # ground penetration
 
 opt_variables = cs.vertcat(Xk1, F, s)
 lcp = {"x": opt_variables, "p": X, "f": obj, "g": constr}
 opts = {
     "print_time": 0,
     "ipopt.print_level": 0,
-    "ipopt.tol": 1e-6,
-    "ipopt.max_iter": 500,
+    "ipopt.tol": 1e-8,
+    "ipopt.max_iter": 1500,
 }
 solver = cs.nlpsol("S", "ipopt", lcp, opts)
 
 n_var = np.shape(opt_variables)[0]
-n_par = n_a  # np.shape(parameters)[0]
 n_g = np.shape(constr)[0]
 
 # variable bounds
 ubx = [1e10] * n_var
-lbx = [-1e10] * n_var
-lbx[n_a : n_a + n_u] = [0] * n_u  # set F positive only
-lbx[n_a + n_u :] = [0] * n_u  # set slack variables >= 0
+lbx = [0] * n_var
+lbx[:n_a] = [-1e10] * n_a  # state can be negative
 
 # constraint bounds
 ubg = [0] * n_g
-ubg[n_a + 1 : n_a + 1 + n_u] = [1e10] * n_u  # set z_c >= 0
-ubg[n_a + 1 + n_u :] = [1e10] * n_u  # set relaxed complementarity >= 0
+# ubg[n_a + 1 : n_a + 1 + n_u] = [1e10] * n_u  # set z_c >= 0
+# ubg[n_a + 1 + n_u :] = [1e10] * n_u  # set relaxed complementarity >= 0
+ubg[n_a : n_a + n_u] = [1e10] * n_u  # set z_c >= 0
+ubg[n_a + n_u :] = [1e10] * n_u  # set relaxed complementarity >= 0
 lbg = [0] * n_g
 
 # initialize simulation variables
-N = 1000  # number of timesteps
+N = 2000  # number of timesteps
 X_0 = np.zeros(n_a)
-p_0 = np.array([0, 0, 3.0])
-Q_0 = np.array([1, 0, 0, 0])
-v_0 = np.array([2, 0, 0])
-ω_0 = np.array([0, 0, 0])
-X_0[:3] = p_0
-X_0[3:7] = Q_0
-X_0[7:10] = v_0
-X_0[10:13] = ω_0
+X_0[:3] = np.array([0, 0, 3.0])
+X_0[3:7] = np.random.rand(
+    4,
+)
+X_0[3:7] = X_0[3:7] / np.linalg.norm(X_0[3:7])
+# X_0[3:7] = np.array([1, 0, 0, 0])
+X_0[7:10] = np.array([0, 2, 0])
+X_0[10:13] = np.array([0, -1, 1])
 
 X_hist = np.zeros((N, n_a))  # array of state vectors for each timestep
 F_hist = np.zeros((N, n_u))  # array of GRF for each timestep
 s_hist = np.zeros((N, n_u))  # array of slack var values for each timestep
-energy_hist = np.zeros(N)
+# energy_hist = np.zeros(N)
 
 X_hist[0, :] = X_0
-p_values = np.zeros(n_par)
-x0_values = np.zeros(n_var)
 for k in tqdm(range(N - 1)):
-    # print("timestep = ", k)
-    p_values = X_hist[k, :]
-    x0_values[:n_a] = X_hist[k, :]
-    sol = solver(lbx=lbx, ubx=ubx, lbg=lbg, ubg=ubg, p=p_values, x0=x0_values)
+    sol = solver(lbx=lbx, ubx=ubx, lbg=lbg, ubg=ubg, p=X_hist[k, :])
     X_hist[k + 1, :] = np.reshape(sol["x"][0:n_a], (-1,))
     F_hist[k] = np.reshape(sol["x"][n_a : n_a + n_u], (-1,))
     s_hist[k] = np.reshape(sol["x"][n_a + n_u :], (-1,))
@@ -209,6 +209,9 @@ hists = {
     "x (m)": X_hist[:, 0],
     "y (m)": X_hist[:, 1],
     "z (m)": X_hist[:, 2],
+    "ωx (m)": X_hist[:, 10],
+    "ωy (m)": X_hist[:, 11],
+    "ωz (m)": X_hist[:, 12],
     "F_c (N)": F_hist,
     "s": s_hist,
 }
@@ -227,9 +230,11 @@ plotter = pv.Plotter(notebook=False, off_screen=True)
 plotter.add_mesh(mesh, show_edges=True, color="white")
 plotter.add_mesh(mesh_plane, show_edges=True, color="white")
 plotter.add_actor(text_obj)
-fps = 30.0
-speed = 0.25  # x real time
-plotter.open_gif("results/" + name + ".gif", fps=fps, subrectangles=True)
+fps = 30
+speed = 1  # x real time
+plotter.open_gif(
+    "results/" + name + ".gif", fps=fps, palettesize=64, subrectangles=True
+)
 frames = int(fps * speed)
 j = 0
 for k in tqdm(range(N)[::frames]):
