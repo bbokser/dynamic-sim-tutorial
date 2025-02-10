@@ -6,6 +6,13 @@ from collections.abc import Callable
 
 import plotting
 
+ϵ = 1e-6
+
+
+def smoothnorm(x: cs.SX):
+    return cs.sqrt(x.T @ x + ϵ * ϵ) - ϵ
+
+
 H = np.zeros((4, 3))
 H[1:4, 0:4] = np.eye(3)
 
@@ -45,10 +52,11 @@ def Aq(Q):
 
 
 n_a = 13  # length of state vector
-n_u = 8  # length of control vector
+n_c = 8  # number of contact points on cube
 m = 10  # mass of the cube in kg
 I = np.eye(3) * 0.1  # inertia matrix
 dt = 0.001  # timestep size
+mu = 0.1  # coefficient of friction
 # body frame locations of the 8 corners of the cube
 r_c_b = np.array(
     (
@@ -78,7 +86,7 @@ def kin_corners(X: np.ndarray) -> np.ndarray:
     return r_c
 
 
-def dynamics_ct(X: cs.SX, U: cs.SX) -> cs.SX:
+def dynamics_ct(X: cs.SX, F: cs.SX) -> cs.SX:
     # SE(3) nonlinear dynamics
     # Unpack state vector
     r_w = X[0:3]  # W frame
@@ -91,12 +99,10 @@ def dynamics_ct(X: cs.SX, U: cs.SX) -> cs.SX:
     # rotation matrix, body to world frame
     A = Aq(Q)
     # iterate through corners to calculate torque acting on body
-    F_c_w = cs.SX(8, 3)
-    for i in range(n_u):
-        F_c_w[i, 2] = U[i]
-        F_w += F_c_w[i, :].T
+    for i in range(n_c):
+        F_w += F[i, :].T
         # add body frame torque due to body frame force
-        tau_b += cs.cross(r_c_b[i, :], A.T @ F_c_w[i, :].T)
+        tau_b += cs.cross(r_c_b[i, :], A.T @ F[i, :].T)
 
     F_w += np.array([0, 0, -9.81]) * m  # gravity
 
@@ -108,6 +114,34 @@ def dynamics_ct(X: cs.SX, U: cs.SX) -> cs.SX:
     return dX
 
 
+def dynamics_ct_np(X: np.ndarray, F: np.ndarray) -> np.ndarray:
+    # SE(3) nonlinear dynamics
+    # Unpack state vector
+    r_w = X[0:3]  # W frame
+    Q = X[3:7]  # B to W
+    v_w = X[7:10]  # W frame
+    ω_b = X[10:13]  # B frame
+    F_w = np.zeros(3)  # force in W frame
+    tau_b = np.zeros(3)  # torque in B frame
+
+    # rotation matrix, body to world frame
+    A = Aq(Q)
+    # iterate through corners to calculate torque acting on body
+    for i in range(n_c):
+        F_w += F[i, :].T
+        # add body frame torque due to body frame force
+        tau_b += np.cross(r_c_b[i, :], A.T @ F[i, :].T)
+
+    F_w += np.array([0, 0, -9.81]) * m  # gravity
+
+    dr = v_w
+    dq = 0.5 * Lq(Q) @ H @ ω_b
+    dv = 1 / m * F_w
+    dω = np.linalg.solve(I, tau_b - np.cross(ω_b, I @ ω_b))
+    dX = np.hstack((dr, dq, dv, dω))
+    return dX
+
+
 def rk4_normalized(dynamics: Callable, X_k: cs.SX, U_k: cs.SX) -> cs.SX:
     # RK4 integrator solves for new X
     f1 = dynamics(X_k, U_k)
@@ -115,7 +149,10 @@ def rk4_normalized(dynamics: Callable, X_k: cs.SX, U_k: cs.SX) -> cs.SX:
     f3 = dynamics(X_k + 0.5 * dt * f2, U_k)
     f4 = dynamics(X_k + dt * f3, U_k)
     X_n = X_k + (dt / 6.0) * (f1 + 2 * f2 + 2 * f3 + f4)
-    X_n[3:7] = X_n[3:7] / cs.norm_2(X_n[3:7])  # normalize the quaternion term
+    if isinstance(X_n, np.ndarray):
+        X_n[3:7] = X_n[3:7] / np.linalg.norm(X_n[3:7])  # normalize the quaternion term
+    else:
+        X_n[3:7] = X_n[3:7] / cs.norm_2(X_n[3:7])  # normalize the quaternion term
     return X_n
 
 
@@ -142,29 +179,55 @@ def get_energy(X):
 
 # initialize casadi variables
 Xk1 = cs.SX.sym("Xk1", n_a)  # X(k+1), state at next timestep
-F = cs.SX.sym("F", n_u)  # force at each corner
-s = cs.SX.sym("s", n_u)  # slack variable
+F = cs.SX.sym("F", n_c, 3)  # force vector at each corner
+s1 = cs.SX.sym("s1", n_c)  # slack variable 1
+s2 = cs.SX.sym("s2", n_c)  # slack variable 2
+# lagrange mult for magnitude of ground vel per contact point
+lam = cs.SX.sym("lam", n_c)
 X = cs.SX.sym("X", n_a)  # X(k), state
 
-obj = s.T @ s
+obj = s1.T @ s1 + s2.T @ s2
+
+r_c_w_prev = kin_corners(X)  # corner positions at k, 8x3
+r_c_w = kin_corners(Xk1)  # corner positions at k+1, 8x3
+dr_c_w = ((r_c_w - r_c_w_prev) / dt)[:, 0:2]  # corner xy velocities, 8x2
+z_c_w = r_c_w[:, 2]  # corner heights at k+1, 8x1
+F_z = F[:, 2]  # vertical grfs, 8x1
+F_tan = F[:, :2]  # tangential ground force friction vectors, 8x2
 
 constr = []  # init constraints
-constr = cs.vertcat(constr, rk4_normalized(dynamics_ct, X, F) - Xk1)
-# constr = cs.vertcat(constr, euler_semi_implicit(dynamics_ct, X, F, Xk1) - Xk1)
+# constr = cs.vertcat(constr, rk4_normalized(dynamics_ct, X, F) - Xk1)
+constr = cs.vertcat(constr, euler_semi_implicit(dynamics_ct, X, F, Xk1) - Xk1)
 
 # stay above the ground
-z_c_w = kin_corners(Xk1)[:, 2]  # corner heights
 constr = cs.vertcat(constr, z_c_w)
 
-# relaxed complementarity aka compl. slackness
-constr = cs.vertcat(constr, s - F * z_c_w)  # ground penetration
+for i in range(n_c):
+    # max dissipation for each corner
+    constr = cs.vertcat(
+        constr,
+        dr_c_w[i, :].T + lam[i] * F_tan[i, :].T / (smoothnorm(F_tan[i, :].T) + ϵ),
+    )
 
-opt_variables = cs.vertcat(Xk1, F, s)
+for i in range(n_c):
+    # primal feasibility friction cone
+    constr = cs.vertcat(constr, mu * F_z[i] - smoothnorm(F_tan[i, :].T))
+
+# interpenetration complementarity
+constr = cs.vertcat(constr, s1 - F_z * z_c_w)
+
+for i in range(n_c):
+    # friction complementarity
+    constr = cs.vertcat(
+        constr, s2[i] - lam[i] * (mu * F_z[i] - smoothnorm(F_tan[i, :].T))
+    )
+
+opt_variables = cs.vertcat(Xk1, F[:, 0], F[:, 1], F[:, 2], s1, s2, lam)
 lcp = {"x": opt_variables, "p": X, "f": obj, "g": constr}
 opts = {
     "print_time": 0,
     "ipopt.print_level": 0,
-    "ipopt.tol": 1e-8,
+    "ipopt.tol": ϵ,
     "ipopt.max_iter": 1500,
 }
 solver = cs.nlpsol("S", "ipopt", lcp, opts)
@@ -176,39 +239,52 @@ n_g = np.shape(constr)[0]
 ubx = [1e10] * n_var
 lbx = [0] * n_var
 lbx[:n_a] = [-1e10] * n_a  # state can be negative
+lbx[n_a : n_a + n_c * 2] = [-1e10] * (n_c * 2)  # Fx and Fy can be negative
 
 # constraint bounds
 ubg = [0] * n_g
-ubg[n_a : n_a + n_u] = [1e10] * n_u  # set z_c >= 0
-ubg[n_a + n_u :] = [1e10] * n_u  # set relaxed complementarity >= 0
+ubg[n_a : n_a + n_c] = [1e10] * n_c  # set z_c >= 0
+ubg[n_a + n_c * 2 : n_a + n_c * 4] = [1e10] * (n_c * 2)  # friction cone
+ubg[n_a + n_c * 4 : n_a + n_c * 5] = [1e10] * n_c  # interpen complementarity
+ubg[n_a + n_c * 5 :] = [1e10] * n_c  # friction complementarity
 lbg = [0] * n_g
 
 # initialize simulation variables
-N = 2000  # number of timesteps
+N = 1000  # number of timesteps
 X_0 = np.zeros(n_a)
 X_0[:3] = np.array([0, 0, 3.0])
 X_0[3:7] = np.random.rand(
     4,
 )
-X_0[3:7] = X_0[3:7] / np.linalg.norm(X_0[3:7])
+X_0[3:7] = X_0[3:7] / np.linalg.norm(X_0[3:7])  # normalize the quaternion
 # X_0[3:7] = np.array([1, 0, 0, 0])
 X_0[7:10] = np.array([0, 2, 0])
 X_0[10:13] = np.array([0, -1, 1])
 
-X_hist = np.zeros((N, n_a))  # array of state vectors for each timestep
-F_hist = np.zeros((N, n_u))  # array of GRF for each timestep
-s_hist = np.zeros((N, n_u))  # array of slack var values for each timestep
+X_hist = np.zeros((N, n_a))  # state vector for each timestep
+Fx_hist = np.zeros((N, n_c))  # array of corner Fx for each timestep
+Fy_hist = np.zeros((N, n_c))  # array of corner Fy for each timestep
+Fz_hist = np.zeros((N, n_c))  # array of corner Fz for each timestep
+s1_hist = np.zeros((N, n_c))  # array of slack var 1 values for each timestep
+s2_hist = np.zeros((N, n_c))  # array of slack var 2 values for each timestep
+lam_hist = np.zeros((N, n_c))  # array of lambda values for each timestep
 energy_hist = np.zeros(N)
 
 X_hist[0, :] = X_0
 for k in tqdm(range(N - 1)):
-    sol = solver(lbx=lbx, ubx=ubx, lbg=lbg, ubg=ubg, p=X_hist[k, :])
-    X_hist[k + 1, :] = np.reshape(sol["x"][0:n_a], (-1,))
-    F_hist[k] = np.reshape(sol["x"][n_a : n_a + n_u], (-1,))
-    s_hist[k] = np.reshape(sol["x"][n_a + n_u :], (-1,))
-    # energy_hist[k] = get_energy(X_hist[k, :])
+    X_hist[k + 1, :] = rk4_normalized(dynamics_ct_np, X_hist[k, :], np.zeros((8, 3)))
+    if (kin_corners(X_hist[k + 1, :])[:, 2] < 0).any():
+        sol = solver(lbx=lbx, ubx=ubx, lbg=lbg, ubg=ubg, p=X_hist[k, :])
+        X_hist[k + 1, :] = np.reshape(sol["x"][0:n_a], (-1,))
+        Fx_hist[k] = np.reshape(sol["x"][n_a : n_a + n_c], (-1,))
+        Fy_hist[k] = np.reshape(sol["x"][n_a + n_c : n_a + n_c * 2], (-1,))
+        Fz_hist[k] = np.reshape(sol["x"][n_a + n_c * 2 : n_a + n_c * 3], (-1,))
+        s1_hist[k] = np.reshape(sol["x"][n_a + n_c * 3 : n_a + n_c * 4], (-1,))
+        s2_hist[k] = np.reshape(sol["x"][n_a + n_c * 4 : n_a + n_c * 5], (-1,))
+        lam_hist[k] = np.reshape(sol["x"][n_a + n_c * 5 :], (-1,))
+        # energy_hist[k] = get_energy(X_hist[k, :])
 
-name = "cube_3d_con_tstep"
+name = "cube_3d_confr_tstep"
 hists = {
     "x (m)": X_hist[:, 0],
     "y (m)": X_hist[:, 1],
@@ -216,8 +292,8 @@ hists = {
     "ωx (m)": X_hist[:, 10],
     "ωy (m)": X_hist[:, 11],
     "ωz (m)": X_hist[:, 12],
-    "F_c (N)": F_hist,
-    "s": s_hist,
+    "Fz_c (N)": Fz_hist,
+    "s1": s1_hist,
 }
 plotting.plot_hist(hists, name)
 

@@ -6,8 +6,8 @@ import plotting
 ϵ = 1e-4
 
 
-def smoothsqrt(x):
-    return cs.sqrt(x + ϵ * ϵ) - ϵ
+def smoothnorm(x):
+    return cs.sqrt(x**2 + ϵ * ϵ) - ϵ
 
 
 n_a = 4  # length of state vector
@@ -71,10 +71,10 @@ constr = cs.vertcat(
 
 # tang. gnd vel is zero if GRF is zero but is otherwise equal to dx
 # max dissipation
-constr = cs.vertcat(constr, cs.SX(dxk + lam * Fx / (smoothsqrt(Fx * Fx) + ϵ)))
+constr = cs.vertcat(constr, cs.SX(dxk + lam * Fx / (smoothnorm(Fx * Fx) + ϵ)))
 
 # primal feasibility
-primal_friction = mu * Fz - smoothsqrt(Fx * Fx)  # uN = Ff
+primal_friction = mu * Fz - smoothnorm(Fx)  # uN = Ff
 constr = cs.vertcat(constr, cs.SX(primal_friction))  # friction cone
 
 # relaxed complementarity aka compl. slackness
