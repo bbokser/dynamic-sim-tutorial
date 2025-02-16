@@ -114,30 +114,18 @@ def dynamics_ct(X: cs.SX, F: cs.SX) -> cs.SX:
     return dX
 
 
-def dynamics_ct_np(X: np.ndarray, F: np.ndarray) -> np.ndarray:
+def dynamics_floating_ct(X: np.ndarray, F: np.ndarray) -> np.ndarray:
     # SE(3) nonlinear dynamics
     # Unpack state vector
-    r_w = X[0:3]  # W frame
     Q = X[3:7]  # B to W
     v_w = X[7:10]  # W frame
     ω_b = X[10:13]  # B frame
-    F_w = np.zeros(3)  # force in W frame
-    tau_b = np.zeros(3)  # torque in B frame
-
-    # rotation matrix, body to world frame
-    A = Aq(Q)
-    # iterate through corners to calculate torque acting on body
-    for i in range(n_c):
-        F_w += F[i, :].T
-        # add body frame torque due to body frame force
-        tau_b += np.cross(r_c_b[i, :], A.T @ F[i, :].T)
-
-    F_w += np.array([0, 0, -9.81]) * m  # gravity
+    F_w = np.array([0, 0, -9.81]) * m  # force in W frame
 
     dr = v_w
     dq = 0.5 * Lq(Q) @ H @ ω_b
     dv = 1 / m * F_w
-    dω = np.linalg.solve(I, tau_b - np.cross(ω_b, I @ ω_b))
+    dω = np.zeros(3)
     dX = np.hstack((dr, dq, dv, dω))
     return dX
 
@@ -164,7 +152,7 @@ def euler_semi_implicit(
     X_k_semi[:7] = X_k[:7]
     X_k_semi[7:] = X_k1[7:]
     X_n = X_k + dt * dynamics(X_k_semi, U_k)
-    X_n[3:7] = X_n[3:7] / cs.norm_2(X_n[3:7])  # normalize the quaternion term
+    # X_n[3:7] = X_n[3:7] / cs.norm_2(X_n[3:7])  # normalize the quaternion term
     return X_n
 
 
@@ -190,24 +178,31 @@ obj = s1.T @ s1 + s2.T @ s2
 
 r_c_w_prev = kin_corners(X)  # corner positions at k, 8x3
 r_c_w = kin_corners(Xk1)  # corner positions at k+1, 8x3
-dr_c_w = ((r_c_w - r_c_w_prev) / dt)[:, 0:2]  # corner xy velocities, 8x2
+v_tan = ((r_c_w - r_c_w_prev) / dt)[:, 0:2]  # corner xy velocities, 8x2
 z_c_w = r_c_w[:, 2]  # corner heights at k+1, 8x1
-F_z = F[:, 2]  # vertical grfs, 8x1
 F_tan = F[:, :2]  # tangential ground force friction vectors, 8x2
+F_z = F[:, 2]  # vertical grfs, 8x1
 
 constr = []  # init constraints
+
+# --- Equality Constraints --- #
 # constr = cs.vertcat(constr, rk4_normalized(dynamics_ct, X, F) - Xk1)
 constr = cs.vertcat(constr, euler_semi_implicit(dynamics_ct, X, F, Xk1) - Xk1)
 
-# stay above the ground
-constr = cs.vertcat(constr, z_c_w)
+# quaternion normalization
+constr = cs.vertcat(constr, cs.norm_2(Xk1[3:7]) ** 2 - 1)
 
 for i in range(n_c):
     # max dissipation for each corner
     constr = cs.vertcat(
         constr,
-        dr_c_w[i, :].T + lam[i] * F_tan[i, :].T / (smoothnorm(F_tan[i, :].T) + ϵ),
+        v_tan[i, :].T + lam[i] * F_tan[i, :].T / (smoothnorm(F_tan[i, :].T) + ϵ),
     )
+
+# --- Inequality Constraints --- #
+
+# interpenetration
+constr = cs.vertcat(constr, z_c_w)
 
 for i in range(n_c):
     # primal feasibility friction cone
@@ -228,7 +223,7 @@ opts = {
     "print_time": 0,
     "ipopt.print_level": 0,
     "ipopt.tol": ϵ,
-    "ipopt.max_iter": 1500,
+    "ipopt.max_iter": 3000,
 }
 solver = cs.nlpsol("S", "ipopt", lcp, opts)
 
@@ -239,18 +234,16 @@ n_g = np.shape(constr)[0]
 ubx = [1e10] * n_var
 lbx = [0] * n_var
 lbx[:n_a] = [-1e10] * n_a  # state can be negative
+lbx[2] = 1  # z pos can't get closer to the ground than 1 m
 lbx[n_a : n_a + n_c * 2] = [-1e10] * (n_c * 2)  # Fx and Fy can be negative
 
 # constraint bounds
 ubg = [0] * n_g
-ubg[n_a : n_a + n_c] = [1e10] * n_c  # set z_c >= 0
-ubg[n_a + n_c * 2 : n_a + n_c * 4] = [1e10] * (n_c * 2)  # friction cone
-ubg[n_a + n_c * 4 : n_a + n_c * 5] = [1e10] * n_c  # interpen complementarity
-ubg[n_a + n_c * 5 :] = [1e10] * n_c  # friction complementarity
+ubg[n_a + 1 + n_c * 2 :] = [1e10] * (n_c * 4)  # inequality constraints
 lbg = [0] * n_g
 
 # initialize simulation variables
-N = 1000  # number of timesteps
+N = 2000  # number of timesteps
 X_0 = np.zeros(n_a)
 X_0[:3] = np.array([0, 0, 3.0])
 X_0[3:7] = np.random.rand(
@@ -272,8 +265,8 @@ energy_hist = np.zeros(N)
 
 X_hist[0, :] = X_0
 for k in tqdm(range(N - 1)):
-    X_hist[k + 1, :] = rk4_normalized(dynamics_ct_np, X_hist[k, :], np.zeros((8, 3)))
-    if (kin_corners(X_hist[k + 1, :])[:, 2] < 0).any():
+    X_hist[k + 1, :] = rk4_normalized(dynamics_floating_ct, X_hist[k, :], None)
+    if (kin_corners(X_hist[k + 1, :])[:, 2] <= 0).any() or X_hist[k + 1, 2] <= 1:
         sol = solver(lbx=lbx, ubx=ubx, lbg=lbg, ubg=ubg, p=X_hist[k, :])
         X_hist[k + 1, :] = np.reshape(sol["x"][0:n_a], (-1,))
         Fx_hist[k] = np.reshape(sol["x"][n_a : n_a + n_c], (-1,))
@@ -289,11 +282,16 @@ hists = {
     "x (m)": X_hist[:, 0],
     "y (m)": X_hist[:, 1],
     "z (m)": X_hist[:, 2],
-    "ωx (m)": X_hist[:, 10],
-    "ωy (m)": X_hist[:, 11],
-    "ωz (m)": X_hist[:, 12],
+    # "vx (m/s)": X_hist[:, 7],
+    # "vy (m/s)": X_hist[:, 8],
+    # "vz (rad/s)": X_hist[:, 9],
+    # "ωx (rad/s)": X_hist[:, 10],
+    # "ωy (rad/s)": X_hist[:, 11],
+    # "ωz (rad/s)": X_hist[:, 12],
     "Fz_c (N)": Fz_hist,
     "s1": s1_hist,
+    "s2": s2_hist,
+    "lam": lam_hist,
 }
 plotting.plot_hist(hists, name)
 

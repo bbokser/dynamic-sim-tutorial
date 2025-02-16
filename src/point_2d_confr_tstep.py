@@ -1,6 +1,6 @@
 import numpy as np
 import casadi as cs
-
+from tqdm import tqdm
 import plotting
 
 ϵ = 1e-4
@@ -25,6 +25,11 @@ mu = 0.1  # coefficient of friction
 def dynamics_ct(X, U):
     dX = A @ X + B @ U + G.flatten()
     return dX
+
+
+def integrator_euler(dyn_ct, xk, uk):
+    X_next = xk + dt * dyn_ct(xk, uk)
+    return X_next
 
 
 def integrator_euler_semi_implicit(dyn_ct, xk, uk, xk1):
@@ -71,7 +76,7 @@ constr = cs.vertcat(
 
 # tang. gnd vel is zero if GRF is zero but is otherwise equal to dx
 # max dissipation
-constr = cs.vertcat(constr, cs.SX(dxk + lam * Fx / (smoothnorm(Fx * Fx) + ϵ)))
+constr = cs.vertcat(constr, cs.SX(dxk + lam * Fx / (smoothnorm(Fx) + ϵ)))
 
 # primal feasibility
 primal_friction = mu * Fz - smoothnorm(Fx)  # uN = Ff
@@ -116,18 +121,19 @@ x0_values = np.zeros(n_var)
 s1_hist = np.zeros(N)
 s2_hist = np.zeros(N)
 lam_hist = np.zeros(N)
-for k in range(N - 1):
-    print("timestep = ", k)
-    p_values[:n_a] = X_hist[k, :]
-    p_values[n_a:] = U_hist[k, :]
-    x0_values[:n_a] = X_hist[k, :]
-    sol = solver(lbx=lbx, ubx=ubx, lbg=lbg, ubg=ubg, p=p_values, x0=x0_values)
-    X_hist[k + 1, :] = np.reshape(sol["x"][0:n_a], (-1,))
-    Fx_hist[k] = sol["x"][n_a]
-    Fz_hist[k] = sol["x"][n_a + 1]
-    s1_hist[k] = sol["x"][n_a + 2]
-    s2_hist[k] = sol["x"][n_a + 3]
-    lam_hist[k] = sol["x"][n_a + 4]
+for k in tqdm(range(N - 1)):
+    X_hist[k + 1, :] = integrator_euler(dynamics_ct, X_hist[k, :], np.zeros(n_u))
+    if X_hist[k + 1, 1] <= 0:
+        p_values[:n_a] = X_hist[k, :]
+        p_values[n_a:] = U_hist[k, :]
+        x0_values[:n_a] = X_hist[k, :]
+        sol = solver(lbx=lbx, ubx=ubx, lbg=lbg, ubg=ubg, p=p_values, x0=x0_values)
+        X_hist[k + 1, :] = np.reshape(sol["x"][0:n_a], (-1,))
+        Fx_hist[k] = sol["x"][n_a]
+        Fz_hist[k] = sol["x"][n_a + 1]
+        s1_hist[k] = sol["x"][n_a + 2]
+        s2_hist[k] = sol["x"][n_a + 3]
+        lam_hist[k] = sol["x"][n_a + 4]
 
 x_hist = X_hist[:, 0]
 z_hist = X_hist[:, 1]
