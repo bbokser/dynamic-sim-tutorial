@@ -114,36 +114,6 @@ def dynamics_ct(X: cs.SX, F: cs.SX) -> cs.SX:
     return dX
 
 
-def dynamics_floating_ct(X: np.ndarray, F: np.ndarray) -> np.ndarray:
-    # SE(3) nonlinear dynamics
-    # Unpack state vector
-    Q = X[3:7]  # B to W
-    v_w = X[7:10]  # W frame
-    ω_b = X[10:13]  # B frame
-    F_w = np.array([0, 0, -9.81]) * m  # force in W frame
-
-    dr = v_w
-    dq = 0.5 * Lq(Q) @ H @ ω_b
-    dv = 1 / m * F_w
-    dω = np.zeros(3)
-    dX = np.hstack((dr, dq, dv, dω))
-    return dX
-
-
-def rk4_normalized(dynamics: Callable, X_k: cs.SX, U_k: cs.SX) -> cs.SX:
-    # RK4 integrator solves for new X
-    f1 = dynamics(X_k, U_k)
-    f2 = dynamics(X_k + 0.5 * dt * f1, U_k)
-    f3 = dynamics(X_k + 0.5 * dt * f2, U_k)
-    f4 = dynamics(X_k + dt * f3, U_k)
-    X_n = X_k + (dt / 6.0) * (f1 + 2 * f2 + 2 * f3 + f4)
-    if isinstance(X_n, np.ndarray):
-        X_n[3:7] = X_n[3:7] / np.linalg.norm(X_n[3:7])  # normalize the quaternion term
-    else:
-        X_n[3:7] = X_n[3:7] / cs.norm_2(X_n[3:7])  # normalize the quaternion term
-    return X_n
-
-
 def euler_semi_implicit(
     dynamics: Callable, X_k: cs.SX, U_k: cs.SX, X_k1: cs.SX
 ) -> cs.SX:
@@ -154,15 +124,6 @@ def euler_semi_implicit(
     X_n = X_k + dt * dynamics(X_k_semi, U_k)
     # X_n[3:7] = X_n[3:7] / cs.norm_2(X_n[3:7])  # normalize the quaternion term
     return X_n
-
-
-def get_energy(X):
-    r_w = X[0:3]  # W frame
-    v_w = X[7:10]  # W frame
-    ω_b = X[10:13]  # B frame
-    return (
-        0.5 * m * np.linalg.norm(v_w) ** 2 + m * 9.81 * r_w[2] + 0.5 * ω_b.T @ I @ ω_b
-    )
 
 
 # initialize casadi variables
@@ -265,17 +226,15 @@ energy_hist = np.zeros(N)
 
 X_hist[0, :] = X_0
 for k in tqdm(range(N - 1)):
-    X_hist[k + 1, :] = rk4_normalized(dynamics_floating_ct, X_hist[k, :], None)
-    if (kin_corners(X_hist[k + 1, :])[:, 2] <= 0).any() or X_hist[k + 1, 2] <= 1:
-        sol = solver(lbx=lbx, ubx=ubx, lbg=lbg, ubg=ubg, p=X_hist[k, :])
-        X_hist[k + 1, :] = np.reshape(sol["x"][0:n_a], (-1,))
-        Fx_hist[k] = np.reshape(sol["x"][n_a : n_a + n_c], (-1,))
-        Fy_hist[k] = np.reshape(sol["x"][n_a + n_c : n_a + n_c * 2], (-1,))
-        Fz_hist[k] = np.reshape(sol["x"][n_a + n_c * 2 : n_a + n_c * 3], (-1,))
-        s1_hist[k] = np.reshape(sol["x"][n_a + n_c * 3 : n_a + n_c * 4], (-1,))
-        s2_hist[k] = np.reshape(sol["x"][n_a + n_c * 4 : n_a + n_c * 5], (-1,))
-        lam_hist[k] = np.reshape(sol["x"][n_a + n_c * 5 :], (-1,))
-        # energy_hist[k] = get_energy(X_hist[k, :])
+    sol = solver(lbx=lbx, ubx=ubx, lbg=lbg, ubg=ubg, p=X_hist[k, :])
+    X_hist[k + 1, :] = np.reshape(sol["x"][0:n_a], (-1,))
+    Fx_hist[k] = np.reshape(sol["x"][n_a : n_a + n_c], (-1,))
+    Fy_hist[k] = np.reshape(sol["x"][n_a + n_c : n_a + n_c * 2], (-1,))
+    Fz_hist[k] = np.reshape(sol["x"][n_a + n_c * 2 : n_a + n_c * 3], (-1,))
+    s1_hist[k] = np.reshape(sol["x"][n_a + n_c * 3 : n_a + n_c * 4], (-1,))
+    s2_hist[k] = np.reshape(sol["x"][n_a + n_c * 4 : n_a + n_c * 5], (-1,))
+    lam_hist[k] = np.reshape(sol["x"][n_a + n_c * 5 :], (-1,))
+
 
 name = "cube_3d_confr_tstep"
 hists = {
@@ -294,11 +253,6 @@ hists = {
     "lam": lam_hist,
 }
 plotting.plot_hist(hists, name)
-
-# hists_2 = {
-#     "energy (J)": energy_hist,
-# }
-# plotting.plot_hist(hists_2, name + " energy")
 
 # ---#
 mesh = pv.Box()
