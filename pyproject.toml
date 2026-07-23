@@ -1,0 +1,13 @@
+[project]
+name = "dynamic-sim-tutorial"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "casadi>=3.7.2",
+    "imageio>=2.37.4",
+    "numpy>=2.5.1",
+    "pyvista>=0.48.4",
+    "tqdm>=4.69.0",
+]
