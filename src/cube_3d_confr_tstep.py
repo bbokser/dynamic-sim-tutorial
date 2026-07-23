@@ -42,14 +42,16 @@ def dynamics_confr_ct(X: cs.SX, F: cs.SX) -> cs.SX:
     Q = X[3:7]  # B to W
     v_w = X[7:10]  # W frame
     ω_b = X[10:13]  # B frame
-    F_w = cs.SX(3, 1)  # force in W frame
-    tau_b = cs.SX(3, 1)  # torque in B frame
 
     # rotation matrix, body to world frame
     A = Aq_cs(Q)
-    # iterate through corners to calculate torque acting on body
+
+    # get sum of all forces in world frame
+    # 3x1 = 3x8 @ 8x1
+    ones_nc = cs.SX.ones(8, 1)
+    F_w = F.T @ ones_nc  # force in W frame
+    tau_b = cs.SX(3, 1)  # torque in B frame
     for i in range(8):
-        F_w += F[i, :].T
         # add body frame torque due to body frame force
         tau_b += cs.cross(R_C_B[i, :], A.T @ F[i, :].T)
 

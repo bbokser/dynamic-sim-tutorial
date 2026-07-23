@@ -10,7 +10,7 @@ G = 9.81
 # mass of the particle in kg
 MASS = 10
 # inertia matrix
-INERTIA = np.eye(3)
+INERTIA = np.eye(3) * 0.01
 # inertia matrix inverse
 I_INV = np.linalg.inv(INERTIA)
 # timestep size

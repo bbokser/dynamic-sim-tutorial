@@ -176,7 +176,7 @@ def main():
     s_hist = np.zeros((N, n_c))  # array of slack var values for each timestep
 
     X_hist[0, :] = X_0
-    for k in tqdm(range(N - 1)):
+    for k in tqdm(range(N - 1), desc="Simulating"):
         X_hist[k + 1, :] = rk4_normalized(
             dynamics_falling_ct, X_hist[k, :], np.zeros(8)
         )
