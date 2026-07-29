@@ -16,7 +16,7 @@ I_INV = np.linalg.inv(INERTIA)
 # timestep size
 DT = 0.001
 # body frame locations of the 8 corners of the cube
-R_C_B = np.array(
+C_B = np.array(
     (
         [-1, -1, -1],
         [1, -1, -1],
@@ -36,13 +36,16 @@ def kin_corners(X: np.ndarray) -> np.ndarray:
 
     :param X: state vector
     """
-    r_c = np.zeros((8, 3))
     ones_nc = np.ones((8, 1))
-    r_w = X[0:3].reshape((-1, 1))  # W frame
-    Q = X[3:7]  # B to W
-    A = Aq(Q)  # rotation matrix
-    r_c = (A @ R_C_B.T).T + ones_nc @ r_w.T
-    return r_c
+    # position of cube in world frame
+    r_w = X[0:3].reshape((-1, 1))
+    # body to world frame quaternion
+    Q = X[3:7]
+    # rotation matrix
+    A = Aq(Q)
+    # rotate C_B and add r_w
+    C_W = (A @ C_B.T).T + ones_nc @ r_w.T
+    return C_W
 
 
 def dynamics_floating_ct(X: np.ndarray, U: np.ndarray) -> np.ndarray:
@@ -52,15 +55,13 @@ def dynamics_floating_ct(X: np.ndarray, U: np.ndarray) -> np.ndarray:
     :param X: state vector
     :param U: control vector
     """
-    # SE(3) nonlinear dynamics
-    # Unpack state vector
     # r_w = X[0:3]  # W frame
     Q = X[3:7]  # B to W
     v_w = X[7:10]  # W frame
     ω_b = X[10:13]  # B frame
     F_w = U[0:3]  # W frame
     tau_b = U[3:]  # B frame
-    dr = v_w  # rotate v from body to world frame
+    dr = v_w
     dq = 0.5 * Lq(Q) @ H @ ω_b
     dv = 1 / MASS * F_w
     # dω = np.linalg.solve(INERTIA, tau_b - np.cross(ω_b, INERTIA @ ω_b))
@@ -128,6 +129,7 @@ def animate_cube(X_hist: np.ndarray, name: str) -> None:
     plotter = pv.Plotter(notebook=False, off_screen=True)
     plotter.add_mesh(mesh, show_edges=True, color="white")
     plotter.add_mesh(mesh_plane, show_edges=True, color="white")
+    plotter.camera.zoom(1.5)
     plotter.add_actor(text_obj)
     fps = 30.0
     speed = 1  # x real time

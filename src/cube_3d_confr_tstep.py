@@ -7,8 +7,9 @@ from cube_3d_floating import (
     kin_corners,
     animate_cube,
     plot_energy,
+    dynamics_floating_ct,
     DT,
-    R_C_B,
+    C_B,
     MASS,
     INERTIA,
     I_INV,
@@ -16,7 +17,6 @@ from cube_3d_floating import (
 )
 from cube_3d_con_tstep import (
     euler_semi_implicit,
-    dynamics_falling_ct,
     kin_corners_cs,
 )
 from transforms_cs import Lq_cs, Aq_cs, H
@@ -53,7 +53,7 @@ def dynamics_confr_ct(X: cs.SX, F: cs.SX) -> cs.SX:
     tau_b = cs.SX(3, 1)  # torque in B frame
     for i in range(8):
         # add body frame torque due to body frame force
-        tau_b += cs.cross(R_C_B[i, :], A.T @ F[i, :].T)
+        tau_b += cs.cross(C_B[i, :], A.T @ F[i, :].T)
 
     F_w += np.array([0, 0, -G]) * MASS  # gravity
 
@@ -80,11 +80,11 @@ def main():
 
     obj = s1.T @ s1 + s2.T @ s2
 
-    r_c_w_prev = kin_corners_cs(X)  # corner positions at k, 8x3
-    r_c_w = kin_corners_cs(Xk1)  # corner positions at k+1, 8x3
-    v_tan = ((r_c_w - r_c_w_prev) / DT)[:, 0:2]  # corner xy velocities, 8x2
-    z_c_w = r_c_w[:, 2]  # corner heights at k+1, 8x1
-    F_tan = F[:, :2]  # tangential ground force friction vectors, 8x2
+    C_prev = kin_corners_cs(X)  # corner positions at k, 8x3
+    C = kin_corners_cs(Xk1)  # corner positions at k+1, 8x3
+    dC_xy = ((C - C_prev) / DT)[:, 0:2]  # corner xy velocities, 8x2
+    c_z = C[:, 2]  # corner heights at k+1, 8x1
+    F_xy = F[:, :2]  # tangential ground force friction vectors, 8x2
     F_z = F[:, 2]  # vertical grfs, 8x1
 
     constr = []  # init constraints
@@ -99,25 +99,25 @@ def main():
         # max dissipation for each corner
         constr = cs.vertcat(
             constr,
-            v_tan[i, :].T + lam[i] * F_tan[i, :].T / (smoothnorm(F_tan[i, :].T) + ϵ),
+            dC_xy[i, :].T + lam[i] * F_xy[i, :].T / (smoothnorm(F_xy[i, :].T) + ϵ),
         )
 
     # --- Inequality Constraints --- #
 
     # interpenetration
-    constr = cs.vertcat(constr, z_c_w)
+    constr = cs.vertcat(constr, c_z)
 
     for i in range(n_c):
         # primal feasibility friction cone
-        constr = cs.vertcat(constr, MU * F_z[i] - smoothnorm(F_tan[i, :].T))
+        constr = cs.vertcat(constr, MU * F_z[i] - smoothnorm(F_xy[i, :].T))
 
     # interpenetration complementarity
-    constr = cs.vertcat(constr, s1 - F_z * z_c_w)
+    constr = cs.vertcat(constr, s1 - F_z * c_z)
 
     for i in range(n_c):
         # friction complementarity
         constr = cs.vertcat(
-            constr, s2[i] - lam[i] * (MU * F_z[i] - smoothnorm(F_tan[i, :].T))
+            constr, s2[i] - lam[i] * (MU * F_z[i] - smoothnorm(F_xy[i, :].T))
         )
 
     opt_variables = cs.vertcat(Xk1, F[:, 0], F[:, 1], F[:, 2], s1, s2, lam)
@@ -165,9 +165,11 @@ def main():
 
     prev_sol = np.hstack((X_0, np.zeros(n_c * 6)))
     X_hist[0, :] = X_0
+    U_floating = np.zeros(6)
+    U_floating[:3] = np.array([0, 0, -G]) * MASS  # force in W frame
     for k in tqdm(range(N - 1), desc="Simulating"):
         X_hist[k + 1, :] = rk4_normalized(
-            dynamics_falling_ct, X_hist[k, :], np.zeros(3)
+            dynamics_floating_ct, X_hist[k, :], U_floating
         )
         if (kin_corners(X_hist[k + 1, :])[:, 2] <= 0).any() or X_hist[k + 1, 2] <= 1:
             sol = solver(
@@ -189,7 +191,7 @@ def main():
         "x (m)": X_hist[:, 0],
         "y (m)": X_hist[:, 1],
         "z (m)": X_hist[:, 2],
-        "Fz_c (N)": Fz_hist,
+        "Fz (N)": Fz_hist,
         "s1": s1_hist,
         "s2": s2_hist,
         "lam": lam_hist,

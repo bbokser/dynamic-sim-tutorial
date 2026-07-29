@@ -2,7 +2,7 @@ import numpy as np
 from tqdm import tqdm
 import casadi as cs
 from collections.abc import Callable
-from transforms import H, Lq
+from transforms import H
 from transforms_cs import Aq_cs, Lq_cs
 import plotting
 from cube_3d_floating import (
@@ -10,35 +10,14 @@ from cube_3d_floating import (
     kin_corners,
     animate_cube,
     plot_energy,
+    dynamics_floating_ct,
     G,
     MASS,
     INERTIA,
     I_INV,
     DT,
-    R_C_B,
+    C_B,
 )
-
-
-def dynamics_falling_ct(X: np.ndarray, F: np.ndarray) -> np.ndarray:
-    """
-    Continuous-time SE(3) nonlinear dynamics
-    Subject to gravity but not disturbance forces
-
-    :param X: state vector
-    :param F: forces (ignored)
-    """
-    # Unpack state vector
-    Q = X[3:7]  # B to W
-    v_w = X[7:10]  # W frame
-    ω_b = X[10:13]  # B frame
-    F_w = np.array([0, 0, -G]) * MASS  # force in W frame
-
-    dr = v_w
-    dq = 0.5 * Lq(Q) @ H @ ω_b
-    dv = 1 / MASS * F_w
-    dω = np.zeros(3)
-    dX = np.hstack((dr, dq, dv, dω))
-    return dX
 
 
 def kin_corners_cs(X: cs.SX) -> cs.SX:
@@ -53,7 +32,8 @@ def kin_corners_cs(X: cs.SX) -> cs.SX:
     r_w = X[0:3]  # W frame
     Q = X[3:7]  # B to W
     A = Aq_cs(Q)  # rotation matrix
-    r_c = (A @ R_C_B.T).T + ones_nc @ r_w.T
+    # r_c = (A @ C_B.T).T + ones_nc @ r_w.T
+    r_c = C_B @ A.T + ones_nc @ r_w.T
     return r_c
 
 
@@ -80,7 +60,7 @@ def dynamics_con_ct(X: cs.SX, F: cs.SX) -> cs.SX:
         F_c_w[i, 2] = F[i]
         F_w += F_c_w[i, :].T
         # add body frame torque due to body frame force
-        tau_b += cs.cross(R_C_B[i, :], A.T @ F_c_w[i, :].T)
+        tau_b += cs.cross(C_B[i, :], A.T @ F_c_w[i, :].T)
 
     F_w += np.array([0, 0, -9.81]) * MASS  # gravity
 
@@ -176,9 +156,11 @@ def main():
     s_hist = np.zeros((N, n_c))  # array of slack var values for each timestep
 
     X_hist[0, :] = X_0
+    U_floating = np.zeros(6)
+    U_floating[:3] = np.array([0, 0, -G]) * MASS  # force in W frame
     for k in tqdm(range(N - 1), desc="Simulating"):
         X_hist[k + 1, :] = rk4_normalized(
-            dynamics_falling_ct, X_hist[k, :], np.zeros(8)
+            dynamics_floating_ct, X_hist[k, :], U_floating
         )
         if (kin_corners(X_hist[k + 1, :])[:, 2] <= 0).any() or X_hist[k + 1, 2] <= 1:
             sol = solver(lbx=lbx, ubx=ubx, lbg=lbg, ubg=ubg, p=X_hist[k, :])
@@ -191,7 +173,7 @@ def main():
         "x (m)": X_hist[:, 0],
         "y (m)": X_hist[:, 1],
         "z (m)": X_hist[:, 2],
-        "F_c (N)": F_hist,
+        "F (N)": F_hist,
         "s": s_hist,
     }
     plotting.plot_hist(hists, name)
