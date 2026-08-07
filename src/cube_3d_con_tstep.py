@@ -1,40 +1,21 @@
+import casadi as cs
 import numpy as np
 from tqdm import tqdm
-import casadi as cs
-from collections.abc import Callable
+
+import plotting
+from cube_3d_confr_tstep import G, euler_semi_implicit, kin_corners_cs, plot_energy
+from cube_3d_floating import (
+    C_B,
+    I_INV,
+    INERTIA,
+    MASS,
+    animate_cube,
+    dynamics_floating_ct,
+    kin_corners,
+    rk4_normalized,
+)
 from transforms import H
 from transforms_cs import Aq_cs, Lq_cs
-import plotting
-from cube_3d_floating import (
-    rk4_normalized,
-    kin_corners,
-    animate_cube,
-    plot_energy,
-    dynamics_floating_ct,
-    G,
-    MASS,
-    INERTIA,
-    I_INV,
-    DT,
-    C_B,
-)
-
-
-def kin_corners_cs(X: cs.SX) -> cs.SX:
-    """
-    Get world frame locations of the 8 corners of the cube
-    (CaSaDi version)
-
-    :param X: state vector
-    """
-    r_c = cs.SX(8, 3)
-    ones_nc = cs.SX.ones(8, 1)
-    r_w = X[0:3]  # W frame
-    Q = X[3:7]  # B to W
-    A = Aq_cs(Q)  # rotation matrix
-    # r_c = (A @ C_B.T).T + ones_nc @ r_w.T
-    r_c = C_B @ A.T + ones_nc @ r_w.T
-    return r_c
 
 
 def dynamics_con_ct(X: cs.SX, F: cs.SX) -> cs.SX:
@@ -70,28 +51,6 @@ def dynamics_con_ct(X: cs.SX, F: cs.SX) -> cs.SX:
     dω = I_INV @ (tau_b - cs.cross(ω_b, INERTIA @ ω_b))
     dX = cs.vertcat(dr, dq, dv, dω)
     return dX
-
-
-def euler_semi_implicit(
-    dynamics: Callable,
-    X_k: cs.SX,
-    U_k: cs.SX,
-    X_k1: cs.SX,
-) -> cs.SX:
-    """
-    Semi-Implicit Euler Integrator
-
-    :param dynamics: dynamics function
-    :param X_k: state vector at step k
-    :param U_k: control vector at step k
-    :param X_k1: state vector at step k+1
-    """
-    X_k_semi = cs.SX.zeros(13)
-    X_k_semi[:7] = X_k[:7]
-    X_k_semi[7:] = X_k1[7:]
-    X_n = X_k + DT * dynamics(X_k_semi, U_k)
-    X_n[3:7] = X_n[3:7] / cs.norm_2(X_n[3:7])  # normalize the quaternion term
-    return X_n
 
 
 def main():

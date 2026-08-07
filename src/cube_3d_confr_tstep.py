@@ -1,34 +1,78 @@
+from collections.abc import Callable
+
+import casadi as cs
 import numpy as np
 from tqdm import tqdm
-import casadi as cs
+
 import plotting
 from cube_3d_floating import (
-    rk4_normalized,
-    kin_corners,
-    animate_cube,
-    plot_energy,
-    dynamics_floating_ct,
-    DT,
     C_B,
-    MASS,
-    INERTIA,
+    # DT,
     I_INV,
-    G,
+    INERTIA,
+    MASS,
+    animate_cube,
+    dynamics_floating_ct,
+    kin_corners,
+    rk4_normalized,
 )
-from cube_3d_con_tstep import (
-    euler_semi_implicit,
-    kin_corners_cs,
-)
-from transforms_cs import Lq_cs, Aq_cs, H
+from transforms_cs import Aq_cs, H, Lq_cs
 
+# timestep size
+DT = 0.0005
+# gravity
+G = 9.81
+# coefficient of friction
+MU = 0.3
 # solver tolerance
 ϵ = 1e-6
-# coefficient of friction
-MU = 0.1
 
 
 def smoothnorm(x: cs.SX):
     return cs.sqrt(x.T @ x + ϵ * ϵ) - ϵ
+
+
+def kin_corners_cs(X: cs.SX) -> cs.SX:
+    """
+    Get world frame locations of the 8 corners of the cube
+    (CaSaDi version)
+
+    :param X: state vector
+    """
+    r_c = cs.SX(8, 3)
+    ones_nc = cs.SX.ones(8, 1)
+    r_w = X[0:3]  # W frame
+    Q = X[3:7]  # B to W
+    A = Aq_cs(Q)  # rotation matrix
+    r_c = C_B @ A.T + ones_nc @ r_w.T
+    return r_c
+
+
+def get_energy(X: np.ndarray) -> float:
+    """
+    Calculate total energy in system
+    :param X: state vector
+    """
+    r_w = X[0:3]  # W frame
+    v_w = X[7:10]  # W frame
+    ω_b = X[10:13]  # B frame
+    return (
+        0.5 * MASS * np.linalg.norm(v_w) ** 2
+        + MASS * G * r_w[2]
+        + 0.5 * ω_b.T @ INERTIA @ ω_b
+    )
+
+
+def plot_energy(X_hist: np.ndarray, name: str) -> None:
+    N = np.shape(X_hist)[0]
+    energy_hist = np.zeros(N)
+    for k in tqdm(range(N - 1), desc="Calculating energy"):
+        energy_hist[k] = get_energy(X_hist[k, :])
+
+    hists_2 = {
+        "energy (J)": energy_hist,
+    }
+    plotting.plot_hist(hists_2, name + " energy")
 
 
 def dynamics_confr_ct(X: cs.SX, F: cs.SX) -> cs.SX:
@@ -55,7 +99,8 @@ def dynamics_confr_ct(X: cs.SX, F: cs.SX) -> cs.SX:
         # add body frame torque due to body frame force
         tau_b += cs.cross(C_B[i, :], A.T @ F[i, :].T)
 
-    F_w += np.array([0, 0, -G]) * MASS  # gravity
+    # apply gravity
+    F_w += np.array([0, 0, -G]) * MASS
 
     dr = v_w
     dq = 0.5 * Lq_cs(Q) @ H @ ω_b
@@ -64,6 +109,28 @@ def dynamics_confr_ct(X: cs.SX, F: cs.SX) -> cs.SX:
     dω = I_INV @ (tau_b - cs.cross(ω_b, INERTIA @ ω_b))
     dX = cs.vertcat(dr, dq, dv, dω)
     return dX
+
+
+def euler_semi_implicit(
+    dynamics: Callable,
+    X_k: cs.SX,
+    U_k: cs.SX,
+    X_k1: cs.SX,
+) -> cs.SX:
+    """
+    Semi-Implicit Euler Integrator
+
+    :param dynamics: dynamics function
+    :param X_k: state vector at step k
+    :param U_k: control vector at step k
+    :param X_k1: state vector at step k+1
+    """
+    X_k_semi = cs.SX.zeros(13)
+    X_k_semi[:7] = X_k[:7]
+    X_k_semi[7:] = X_k1[7:]
+    X_n = X_k + DT * dynamics(X_k_semi, U_k)
+    X_n[3:7] = X_n[3:7] / cs.norm_2(X_n[3:7])  # normalize the quaternion term
+    return X_n
 
 
 def main():
@@ -78,14 +145,15 @@ def main():
     lam = cs.SX.sym("lam", n_c)
     X = cs.SX.sym("X", n_a)  # X(k), state
 
-    obj = s1.T @ s1 + s2.T @ s2
-
     C_prev = kin_corners_cs(X)  # corner positions at k, 8x3
     C = kin_corners_cs(Xk1)  # corner positions at k+1, 8x3
     dC_xy = ((C - C_prev) / DT)[:, 0:2]  # corner xy velocities, 8x2
     c_z = C[:, 2]  # corner heights at k+1, 8x1
     F_xy = F[:, :2]  # tangential ground force friction vectors, 8x2
     F_z = F[:, 2]  # vertical grfs, 8x1
+
+    # objective
+    obj = s1.T @ s1 + s2.T @ s2
 
     constr = []  # init constraints
 
@@ -95,27 +163,26 @@ def main():
     # quaternion normalization
     constr = cs.vertcat(constr, cs.norm_2(Xk1[3:7]) ** 2 - 1)
 
+    # max dissipation for each corner (relaxed in air)
     for i in range(n_c):
-        # max dissipation for each corner
         constr = cs.vertcat(
             constr,
             dC_xy[i, :].T + lam[i] * F_xy[i, :].T / (smoothnorm(F_xy[i, :].T) + ϵ),
         )
 
     # --- Inequality Constraints --- #
-
     # interpenetration
     constr = cs.vertcat(constr, c_z)
 
+    # primal feasibility friction cone
     for i in range(n_c):
-        # primal feasibility friction cone
         constr = cs.vertcat(constr, MU * F_z[i] - smoothnorm(F_xy[i, :].T))
 
     # interpenetration complementarity
     constr = cs.vertcat(constr, s1 - F_z * c_z)
 
+    # friction complementarity
     for i in range(n_c):
-        # friction complementarity
         constr = cs.vertcat(
             constr, s2[i] - lam[i] * (MU * F_z[i] - smoothnorm(F_xy[i, :].T))
         )
@@ -137,7 +204,7 @@ def main():
     ubx = [1e10] * n_var
     lbx = [0] * n_var
     lbx[:n_a] = [-1e10] * n_a  # state can be negative
-    lbx[2] = 1  # z pos can't get closer to the ground than 1 m
+    # lbx[2] = 1  # z pos can't get closer to the ground than 1 m
     lbx[n_a : n_a + n_c * 2] = [-1e10] * (n_c * 2)  # Fx and Fy can be negative
 
     # constraint bounds
@@ -148,10 +215,9 @@ def main():
     # initialize simulation variables
     N = 2000  # number of timesteps
     X_0 = np.zeros(n_a)
-    X_0[:3] = np.array([0, 0, 3.0])
+    X_0[:3] = np.array([0, 0, 2.0])
     X_0[3:7] = np.random.rand(4)
     X_0[3:7] = X_0[3:7] / np.linalg.norm(X_0[3:7])  # normalize the quaternion
-    # X_0[3:7] = np.array([1, 0, 0, 0])
     X_0[7:10] = np.array([0, 2, 0])
     X_0[10:13] = np.array([0, -1, 1])
 

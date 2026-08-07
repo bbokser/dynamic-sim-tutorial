@@ -1,16 +1,16 @@
-import numpy as np
-from tqdm import tqdm
-import pyvista as pv
 from collections.abc import Callable
-import plotting
-from transforms import Lq, H, Aq
 
-# gravity
-G = 9.81
+import numpy as np
+import pyvista as pv
+from tqdm import tqdm
+
+import plotting
+from transforms import Aq, H, Lq
+
 # mass of the particle in kg
 MASS = 10
 # inertia matrix
-INERTIA = np.eye(3) * 0.01
+INERTIA = np.eye(3) * 6
 # inertia matrix inverse
 I_INV = np.linalg.inv(INERTIA)
 # timestep size
@@ -28,6 +28,28 @@ C_B = np.array(
         [1, 1, 1],
     )
 )
+
+
+def get_energy(X: np.ndarray) -> float:
+    """
+    Calculate total energy in system
+    :param X: state vector
+    """
+    v_w = X[7:10]  # W frame
+    ω_b = X[10:13]  # B frame
+    return 0.5 * MASS * np.linalg.norm(v_w) ** 2 + 0.5 * ω_b.T @ INERTIA @ ω_b
+
+
+def plot_energy(X_hist: np.ndarray, name: str) -> None:
+    N = np.shape(X_hist)[0]
+    energy_hist = np.zeros(N)
+    for k in tqdm(range(N - 1), desc="Calculating energy"):
+        energy_hist[k] = get_energy(X_hist[k, :])
+
+    hists_2 = {
+        "energy (J)": energy_hist,
+    }
+    plotting.plot_hist(hists_2, name + " energy")
 
 
 def kin_corners(X: np.ndarray) -> np.ndarray:
@@ -87,33 +109,6 @@ def rk4_normalized(dynamics: Callable, X_k: np.ndarray, U_k: np.ndarray) -> np.n
     return xn
 
 
-def get_energy(X: np.ndarray) -> float:
-    """
-    Calculate total energy in system
-    :param X: state vector
-    """
-    r_w = X[0:3]  # W frame
-    v_w = X[7:10]  # W frame
-    ω_b = X[10:13]  # B frame
-    return (
-        0.5 * MASS * np.linalg.norm(v_w) ** 2
-        + MASS * G * r_w[2]
-        + 0.5 * ω_b.T @ INERTIA @ ω_b
-    )
-
-
-def plot_energy(X_hist: np.ndarray, name: str) -> None:
-    N = np.shape(X_hist)[0]
-    energy_hist = np.zeros(N)
-    for k in tqdm(range(N - 1), desc="Calculating energy"):
-        energy_hist[k] = get_energy(X_hist[k, :])
-
-    hists_2 = {
-        "energy (J)": energy_hist,
-    }
-    plotting.plot_hist(hists_2, name + " energy")
-
-
 def animate_cube(X_hist: np.ndarray, name: str) -> None:
     """
     Convert state hist into gif
@@ -139,7 +134,7 @@ def animate_cube(X_hist: np.ndarray, name: str) -> None:
     frames = int(fps * speed)
     for k in tqdm(range(N)[::frames], desc="Generating gif"):
         r_c = kin_corners(X_hist[k, :])
-        text_obj.input = "t = " + "{:.2f}".format(round(k * DT, 2)) + "s"
+        text_obj.input = "t = " + f"{round(k * DT, 2):.2f}" + "s"
         mesh.points = r_c
         plotter.write_frame()
 
