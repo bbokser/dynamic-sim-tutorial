@@ -7,7 +7,6 @@ from tqdm import tqdm
 import plotting
 from cube_3d_floating import (
     C_B,
-    # DT,
     I_INV,
     INERTIA,
     MASS,
@@ -143,7 +142,7 @@ def main():
     # lagrange mult for magnitude of ground vel per contact point
     lam = cs.SX.sym("lam", n_c)
     X = cs.SX.sym("X", n_a)  # X(k), state
-    con = cs.SX.sym("con", n_c)  # contact flags, 8x1
+    alpha = cs.SX.sym("con", n_c)  # contact flags, 8x1
 
     C_prev = kin_corners_cs(X)  # corner positions at k, 8x3
     C = kin_corners_cs(Xk1)  # corner positions at k+1, 8x3
@@ -167,7 +166,7 @@ def main():
     for i in range(n_c):
         constr = cs.vertcat(
             constr,
-            con[i]
+            alpha[i]
             * (dC_xy[i, :].T + lam[i] * F_xy[i, :].T / (smoothnorm(F_xy[i, :].T) + ϵ)),
         )
 
@@ -189,7 +188,7 @@ def main():
         )
 
     opt_variables = cs.vertcat(Xk1, F[:, 0], F[:, 1], F[:, 2], s1, s2, lam)
-    parameters = cs.vertcat(X, con)
+    parameters = cs.vertcat(X, alpha)
     lcp = {"x": opt_variables, "p": parameters, "f": obj, "g": constr}
     opts = {
         "print_time": 0,
@@ -218,12 +217,12 @@ def main():
     # initialize simulation variables
     N = 1000  # number of timesteps
     X_0 = np.zeros(n_a)
-    X_0[:3] = np.array([0, 0, 2.5])
-    # X_0[3:7] = np.random.rand(4)
-    # X_0[3:7] = X_0[3:7] / np.linalg.norm(X_0[3:7])  # normalize the quaternion
-    X_0[3:7] = np.array([1, 0, 0, 0])
-    X_0[7:10] = np.array([0, 2, 0])
-    X_0[10:13] = np.array([0, -1, 1])
+    X_0[:3] = np.array([0, 0, 3])
+    X_0[3:7] = np.random.rand(4)
+    X_0[3:7] = X_0[3:7] / np.linalg.norm(X_0[3:7])  # normalize the quaternion
+    # X_0[3:7] = np.array([1, 0, 0, 0])  # use for deterministic tests
+    X_0[7:10] = np.array([0, 4, 0])
+    X_0[10:13] = np.array([2, 2, 1])
 
     X_hist = np.zeros((N, n_a))  # state vector for each timestep
     Fx_hist = np.zeros((N, n_c))  # array of corner Fx for each timestep
@@ -235,21 +234,19 @@ def main():
 
     prev_sol = np.hstack((X_0, np.zeros(n_c * 6)))
     X_hist[0, :] = X_0
-    U_floating = np.zeros(6)
-    U_floating[:3] = np.array([0, 0, -G]) * MASS  # force in W frame
 
     for k in tqdm(range(N - 1), desc="Simulating"):
         # get corner heights
         c_z_k = kin_corners(X_hist[k, :])[:, 2]
         # check which corners are in contact
-        con_k = (c_z_k <= 0.005).astype(float)
+        alpha_k = (c_z_k <= 0.005).astype(float)
         # update parameter values for contact
-        parameter_values = np.hstack((X_hist[k, :], con_k))
+        parameter_values = np.hstack((X_hist[k, :], alpha_k))
         ubx_k = ubx.copy()
         lbx_k = lbx.copy()
         for i in range(n_c):
-            # no contact at this corner, set variable bounds to zero
-            if con_k[i] == 0.0:
+            if alpha_k[i] == 0.0:
+                # no contact at this corner, set forces to zero
                 ubx_k[n_a + i] = 0.0  # fx upper
                 lbx_k[n_a + i] = 0.0  # fx lower
                 ubx_k[n_a + n_c + i] = 0.0  # fy upper

@@ -123,7 +123,7 @@ def animate_cube(X_hist: np.ndarray, dt: float, name: str) -> None:
     text_obj = pv.Text("t = 0.00 s", position=[0, 0])
     text_obj.prop.color = "black"
     text_obj.prop.font_size = 20
-    plotter = pv.Plotter(notebook=False, off_screen=True)
+    plotter = pv.Plotter(notebook=False, off_screen=True, window_size=[800, 800])
     plotter.add_mesh(mesh, show_edges=True, color="white")
     plotter.add_mesh(mesh_plane, show_edges=True, color="white")
     plotter.camera.zoom(1.5)
@@ -157,7 +157,7 @@ def main():
     # quaternion
     X_0[3:7] = np.array([1, 0, 0, 0])
     # linear velocity
-    X_0[7:10] = np.array([1, 0, 0])
+    X_0[7:10] = np.array([2, 0, 0])
     # angular velocity
     X_0[10:13] = np.array([2.0, 4.0, 6.0])
 
