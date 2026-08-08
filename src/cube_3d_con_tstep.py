@@ -6,6 +6,7 @@ import plotting
 from cube_3d_confr_tstep import G, euler_semi_implicit, kin_corners_cs, plot_energy
 from cube_3d_floating import (
     C_B,
+    DT,
     I_INV,
     INERTIA,
     MASS,
@@ -136,7 +137,7 @@ def main():
         "s": s_hist,
     }
     plotting.plot_hist(hists, name)
-    animate_cube(X_hist, name)
+    animate_cube(X_hist, DT, name)
     plot_energy(X_hist, name)
 
 

@@ -12,14 +12,13 @@ from cube_3d_floating import (
     INERTIA,
     MASS,
     animate_cube,
-    dynamics_floating_ct,
     kin_corners,
-    rk4_normalized,
 )
+from error_suppression import suppress_stderr
 from transforms_cs import Aq_cs, H, Lq_cs
 
 # timestep size
-DT = 0.0005
+DT = 0.002
 # gravity
 G = 9.81
 # coefficient of friction
@@ -144,6 +143,7 @@ def main():
     # lagrange mult for magnitude of ground vel per contact point
     lam = cs.SX.sym("lam", n_c)
     X = cs.SX.sym("X", n_a)  # X(k), state
+    con = cs.SX.sym("con", n_c)  # contact flags, 8x1
 
     C_prev = kin_corners_cs(X)  # corner positions at k, 8x3
     C = kin_corners_cs(Xk1)  # corner positions at k+1, 8x3
@@ -167,7 +167,8 @@ def main():
     for i in range(n_c):
         constr = cs.vertcat(
             constr,
-            dC_xy[i, :].T + lam[i] * F_xy[i, :].T / (smoothnorm(F_xy[i, :].T) + ϵ),
+            con[i]
+            * (dC_xy[i, :].T + lam[i] * F_xy[i, :].T / (smoothnorm(F_xy[i, :].T) + ϵ)),
         )
 
     # --- Inequality Constraints --- #
@@ -188,13 +189,16 @@ def main():
         )
 
     opt_variables = cs.vertcat(Xk1, F[:, 0], F[:, 1], F[:, 2], s1, s2, lam)
-    lcp = {"x": opt_variables, "p": X, "f": obj, "g": constr}
+    parameters = cs.vertcat(X, con)
+    lcp = {"x": opt_variables, "p": parameters, "f": obj, "g": constr}
     opts = {
         "print_time": 0,
         "ipopt.print_level": 0,
+        "ipopt.sb": "yes",  # Silences the IPOPT startup banner
         "ipopt.tol": ϵ,
-        "ipopt.max_iter": 3000,
+        "ipopt.max_iter": 300,
     }
+
     solver = cs.nlpsol("S", "ipopt", lcp, opts)
 
     n_var = np.shape(opt_variables)[0]
@@ -204,7 +208,6 @@ def main():
     ubx = [1e10] * n_var
     lbx = [0] * n_var
     lbx[:n_a] = [-1e10] * n_a  # state can be negative
-    # lbx[2] = 1  # z pos can't get closer to the ground than 1 m
     lbx[n_a : n_a + n_c * 2] = [-1e10] * (n_c * 2)  # Fx and Fy can be negative
 
     # constraint bounds
@@ -213,11 +216,12 @@ def main():
     lbg = [0] * n_g
 
     # initialize simulation variables
-    N = 2000  # number of timesteps
+    N = 1000  # number of timesteps
     X_0 = np.zeros(n_a)
-    X_0[:3] = np.array([0, 0, 2.0])
-    X_0[3:7] = np.random.rand(4)
-    X_0[3:7] = X_0[3:7] / np.linalg.norm(X_0[3:7])  # normalize the quaternion
+    X_0[:3] = np.array([0, 0, 2.5])
+    # X_0[3:7] = np.random.rand(4)
+    # X_0[3:7] = X_0[3:7] / np.linalg.norm(X_0[3:7])  # normalize the quaternion
+    X_0[3:7] = np.array([1, 0, 0, 0])
     X_0[7:10] = np.array([0, 2, 0])
     X_0[10:13] = np.array([0, -1, 1])
 
@@ -233,24 +237,42 @@ def main():
     X_hist[0, :] = X_0
     U_floating = np.zeros(6)
     U_floating[:3] = np.array([0, 0, -G]) * MASS  # force in W frame
+
     for k in tqdm(range(N - 1), desc="Simulating"):
-        X_hist[k + 1, :] = rk4_normalized(
-            dynamics_floating_ct, X_hist[k, :], U_floating
-        )
-        if (kin_corners(X_hist[k + 1, :])[:, 2] <= 0).any() or X_hist[k + 1, 2] <= 1:
+        # get corner heights
+        c_z_k = kin_corners(X_hist[k, :])[:, 2]
+        # check which corners are in contact
+        con_k = (c_z_k <= 0.005).astype(float)
+        # update parameter values for contact
+        parameter_values = np.hstack((X_hist[k, :], con_k))
+        ubx_k = ubx.copy()
+        lbx_k = lbx.copy()
+        for i in range(n_c):
+            # no contact at this corner, set variable bounds to zero
+            if con_k[i] == 0.0:
+                ubx_k[n_a + i] = 0.0  # fx upper
+                lbx_k[n_a + i] = 0.0  # fx lower
+                ubx_k[n_a + n_c + i] = 0.0  # fy upper
+                lbx_k[n_a + n_c + i] = 0.0  # fy lower
+                ubx_k[n_a + n_c * 2 + i] = 0.0  # fz upper
+                lbx_k[n_a + n_c * 2 + i] = 0.0  # fz lower
+                # clamp slack variables and lambda
+                ubx_k[n_a + n_c * 3 + i] = 0.0  # s1
+                ubx_k[n_a + n_c * 4 + i] = 0.0  # s2
+                ubx_k[n_a + n_c * 5 + i] = 0.0  # lam
+
+        with suppress_stderr():
             sol = solver(
-                x0=prev_sol, lbx=lbx, ubx=ubx, lbg=lbg, ubg=ubg, p=X_hist[k, :]
+                x0=prev_sol, lbx=lbx_k, ubx=ubx_k, lbg=lbg, ubg=ubg, p=parameter_values
             )
-            X_hist[k + 1, :] = np.reshape(sol["x"][0:n_a], (-1,))
-            Fx_hist[k] = np.reshape(sol["x"][n_a : n_a + n_c], (-1,))
-            Fy_hist[k] = np.reshape(sol["x"][n_a + n_c : n_a + n_c * 2], (-1,))
-            Fz_hist[k] = np.reshape(sol["x"][n_a + n_c * 2 : n_a + n_c * 3], (-1,))
-            s1_hist[k] = np.reshape(sol["x"][n_a + n_c * 3 : n_a + n_c * 4], (-1,))
-            s2_hist[k] = np.reshape(sol["x"][n_a + n_c * 4 : n_a + n_c * 5], (-1,))
-            lam_hist[k] = np.reshape(sol["x"][n_a + n_c * 5 :], (-1,))
-            prev_sol = sol["x"]  # sol
-        else:
-            prev_sol = np.hstack((X_hist[k + 1, :], np.zeros(n_c * 6)))
+        X_hist[k + 1, :] = np.reshape(sol["x"][0:n_a], (-1,))
+        Fx_hist[k] = np.reshape(sol["x"][n_a : n_a + n_c], (-1,))
+        Fy_hist[k] = np.reshape(sol["x"][n_a + n_c : n_a + n_c * 2], (-1,))
+        Fz_hist[k] = np.reshape(sol["x"][n_a + n_c * 2 : n_a + n_c * 3], (-1,))
+        s1_hist[k] = np.reshape(sol["x"][n_a + n_c * 3 : n_a + n_c * 4], (-1,))
+        s2_hist[k] = np.reshape(sol["x"][n_a + n_c * 4 : n_a + n_c * 5], (-1,))
+        lam_hist[k] = np.reshape(sol["x"][n_a + n_c * 5 :], (-1,))
+        prev_sol = sol["x"]  # sol
 
     name = "cube_3d_confr_tstep"
     hists = {
@@ -263,7 +285,7 @@ def main():
         "lam": lam_hist,
     }
     plotting.plot_hist(hists, name)
-    animate_cube(X_hist, name)
+    animate_cube(X_hist, DT, name)
     plot_energy(X_hist, name)
 
 

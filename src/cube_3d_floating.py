@@ -109,11 +109,13 @@ def rk4_normalized(dynamics: Callable, X_k: np.ndarray, U_k: np.ndarray) -> np.n
     return xn
 
 
-def animate_cube(X_hist: np.ndarray, name: str) -> None:
+def animate_cube(X_hist: np.ndarray, dt: float, name: str) -> None:
     """
     Convert state hist into gif
 
     :param X_hist: state history
+    :param dt: timestep size
+    :param name: filename
     """
     N = np.shape(X_hist)[0]
     mesh = pv.Box()
@@ -131,10 +133,11 @@ def animate_cube(X_hist: np.ndarray, name: str) -> None:
     plotter.open_gif(
         "results/" + name + ".gif", fps=fps, palettesize=64, subrectangles=True
     )
-    frames = int(fps * speed)
-    for k in tqdm(range(N)[::frames], desc="Generating gif"):
+    # steps/frame = s/frame * steps/s = 1 / (((frames/s) * (s/step))
+    steps_per_frame = int(speed / (fps * dt))
+    for k in tqdm(range(N)[::steps_per_frame], desc="Generating gif"):
         r_c = kin_corners(X_hist[k, :])
-        text_obj.input = "t = " + f"{round(k * DT, 2):.2f}" + "s"
+        text_obj.input = "t = " + f"{round(k * dt, 2):.2f}" + "s"
         mesh.points = r_c
         plotter.write_frame()
 
@@ -176,7 +179,7 @@ def main():
         "z (m)": X_hist[:, 2],
     }
     plotting.plot_hist(hists, name)
-    animate_cube(X_hist, name)
+    animate_cube(X_hist, DT, name)
     plot_energy(X_hist, name)
 
 
